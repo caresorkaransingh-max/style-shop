@@ -37,6 +37,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   geolocator: ^14.1.2
   http: ^1.6.0
+  speech_to_text: ^7.5.0
 
 dev_dependencies:
   flutter_test:
