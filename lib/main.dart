@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:material_ui/material_ui.dart';
 
 void main() {
@@ -12,6 +15,38 @@ const Color bg = Color(0xFFF1F3F6);
 
 String px(int id) =>
     'https://images.pexels.com/photos/$id/pexels-photo-$id.jpeg?auto=compress&cs=tinysrgb&w=500';
+
+// ---------- Live location ----------
+
+final ValueNotifier<String> deliverTo = ValueNotifier<String>('Detecting location...');
+
+Future<void> updateLocation() async {
+  try {
+    deliverTo.value = 'Detecting location...';
+    var perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission();
+    }
+    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+      deliverTo.value = 'Allow location access';
+      return;
+    }
+    final pos = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
+    );
+    final uri = Uri.parse(
+      'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${pos.latitude}&lon=${pos.longitude}',
+    );
+    final res = await http.get(uri);
+    final data = jsonDecode(res.body) as Map;
+    final a = (data['address'] ?? {}) as Map;
+    final place = a['city'] ?? a['town'] ?? a['village'] ?? a['suburb'] ?? a['state_district'] ?? 'your area';
+    final pin = a['postcode'] ?? '';
+    deliverTo.value = 'Deliver to $place $pin'.trim();
+  } catch (e) {
+    deliverTo.value = 'Tap to set location';
+  }
+}
 
 // ---------- Data ----------
 
@@ -377,6 +412,7 @@ class _HomeTabState extends State<HomeTab> {
   @override
   void initState() {
     super.initState();
+    updateLocation();
     timer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!pc.hasClients) return;
       pc.animateToPage((page + 1) % banners.length, duration: const Duration(milliseconds: 400), curve: Curves.easeInOut);
@@ -411,12 +447,22 @@ class _HomeTabState extends State<HomeTab> {
               child: Column(
                 children: [
                   const SizedBox(height: 8),
-                  const Row(
-                    children: [
-                      Icon(Icons.location_on, color: Colors.white, size: 18),
-                      Text(' Deliver to Amritsar 143001', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                      Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 18),
-                    ],
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: updateLocation,
+                    child: ValueListenableBuilder<String>(
+                      valueListenable: deliverTo,
+                      builder: (context, v, _) => Row(
+                        children: [
+                          const Icon(Icons.location_on, color: Colors.white, size: 18),
+                          Flexible(
+                            child: Text(' $v', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                          ),
+                          const SizedBox(width: 6),
+                          const Icon(Icons.my_location, color: Colors.white, size: 16),
+                        ],
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   TextField(
