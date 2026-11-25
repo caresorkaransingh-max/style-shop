@@ -5,8 +5,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:material_ui/material_ui.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'extras.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await loadSaved();
   runApp(const ShopApp());
 }
 
@@ -343,7 +346,7 @@ class Order {
   final String id;
   final List<String> items;
   final int total;
-  final DateTime time = DateTime.now();
+  DateTime time = DateTime.now();
   Order(this.id, this.items, this.total);
 
   // Demo: har 15 second mein agla step. Real app mein ye server se aayega.
@@ -369,7 +372,7 @@ class Store extends ChangeNotifier {
   int get count => lines.fold(0, (a, l) => a + l.qty);
   int get subTotal => lines.fold(0, (a, l) => a + l.p.price * l.qty);
   int get mrpTotal => lines.fold(0, (a, l) => a + l.p.mrp * l.qty);
-  int get couponOff => coupon == 'SAVE10' ? (subTotal * 0.10).round() : 0;
+  int get couponOff => couponValue(coupon, subTotal);
   int get total => subTotal - couponOff;
 
   void add(Product p, String size) {
@@ -396,8 +399,8 @@ class Store extends ChangeNotifier {
   }
 
   bool applyCoupon(String c) {
-    if (c.trim().toUpperCase() == 'SAVE10') {
-      coupon = 'SAVE10';
+    if (couponOk(c)) {
+      coupon = c.trim().toUpperCase();
       notifyListeners();
       return true;
     }
@@ -570,6 +573,7 @@ Widget priceRow(String a, String b, {Color? color, bool bold = false}) {
 }
 
 void openProduct(BuildContext context, Product p) {
+  addRecent(p);
   Navigator.push(
     context,
     MaterialPageRoute(builder: (_) => DetailPage(product: p)),
@@ -753,7 +757,7 @@ class _CouponBoxState extends State<CouponBox> {
                   controller: c,
                   textCapitalization: TextCapitalization.characters,
                   decoration: const InputDecoration(
-                    hintText: 'Coupon code (try SAVE10)',
+                    hintText: 'SAVE10, FLAT200 ya WELCOME',
                     border: InputBorder.none,
                   ),
                 ),
@@ -888,6 +892,7 @@ class _RootPageState extends State<RootPage> {
       const WishlistPage(),
       const OrdersPage(),
       const CartPage(),
+      const ProfilePage(),
     ];
     return Scaffold(
       body: pages[tab],
@@ -926,6 +931,11 @@ class _RootPageState extends State<RootPage> {
               ),
               selectedIcon: const Icon(Icons.shopping_cart, color: blue),
               label: 'Cart',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person, color: blue),
+              label: 'Profile',
             ),
           ],
         ),
@@ -1456,6 +1466,7 @@ class _HomeTabState extends State<HomeTab> {
                             ),
                           ),
                         ),
+                        const SaleTimer(),
                         const SizedBox(height: 10),
                         SizedBox(
                           height: 220,
@@ -1517,6 +1528,7 @@ class _HomeTabState extends State<HomeTab> {
                       ],
                     ),
                   ),
+                const RecentlyViewed(),
                 Padding(
                   key: gridKey,
                   padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
@@ -1868,6 +1880,7 @@ class _DetailPageState extends State<DetailPage> {
                 ),
               ),
           ]),
+          ProductExtras(p),
           if (p.isCloth)
             section([
               const Text(
@@ -1966,7 +1979,7 @@ class _DetailPageState extends State<DetailPage> {
                     shape: const RoundedRectangleBorder(),
                   ),
                   onPressed: () {
-                    store.add(p, chosen);
+                    store.add(p, chosen + ' / ' + pickedColor.value);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
@@ -1993,7 +2006,7 @@ class _DetailPageState extends State<DetailPage> {
                     shape: const RoundedRectangleBorder(),
                   ),
                   onPressed: () {
-                    store.add(p, chosen);
+                    store.add(p, chosen + ' / ' + pickedColor.value);
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const CheckoutPage()),
@@ -2147,7 +2160,7 @@ class CartPage extends StatelessWidget {
                           ),
                           if (store.couponOff > 0)
                             priceRow(
-                              'Coupon (SAVE10)',
+                              'Coupon (${store.coupon})',
                               '- ₹${store.couponOff}',
                               color: green,
                             ),
@@ -2235,9 +2248,9 @@ class CheckoutPage extends StatefulWidget {
 
 class _CheckoutPageState extends State<CheckoutPage> {
   String pay = 'UPI';
-  final name = TextEditingController(text: 'Your Name');
-  final addr = TextEditingController(text: 'House 12, Model Town, Amritsar');
-  final pin = TextEditingController(text: '143001');
+  final name = TextEditingController(text: profile.name);
+  final addr = TextEditingController(text: profile.address);
+  final pin = TextEditingController(text: profile.pin);
 
   @override
   void dispose() {
@@ -2333,7 +2346,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ),
                 if (store.couponOff > 0)
                   priceRow(
-                    'Coupon (SAVE10)',
+                    'Coupon (${store.coupon})',
                     '- ₹${store.couponOff}',
                     color: green,
                   ),
@@ -2366,6 +2379,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 onPressed: store.lines.isEmpty
                     ? null
                     : () {
+                        rememberAddress(name.text, addr.text, pin.text);
                         final id = store.placeOrder();
                         Navigator.pushAndRemoveUntil(
                           context,
