@@ -1209,6 +1209,34 @@ class _HomeTabState extends State<HomeTab> {
               child: Column(
                 children: [
                   const SizedBox(height: 8),
+                  // ----- Style Shop logo -----
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Image.asset(
+                        'assets/logo.png',
+                        height: 40,
+                        errorBuilder: (context, error, stack) => const Text(
+                          'Style Shop',
+                          style: TextStyle(
+                            color: blue,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                   Row(
                     children: [
                       Expanded(
