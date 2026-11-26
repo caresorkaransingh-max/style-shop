@@ -103,6 +103,8 @@ void saveStoreToStorage() {
 
 Future<void> loadSaved() async {
   try {
+    html.document.title = 'Style Shop';
+
     final darkRaw = _readStorage(_kDarkKey);
     if (darkRaw == 'true') darkMode.value = true;
     if (darkRaw == 'false') darkMode.value = false;
@@ -121,6 +123,24 @@ Future<void> loadSaved() async {
     final sRaw = _readStorage(_kStoreKey);
     if (sRaw != null && sRaw.isNotEmpty) {
       store.loadFromJson(jsonDecode(sRaw) as Map<String, dynamic>);
+    }
+  } catch (_) {}
+}
+
+// Deep-link support (?product=ID)
+void handleDeepLinkIfAny(BuildContext context) {
+  try {
+    final uri = Uri.parse(html.window.location.href);
+    final rawId = uri.queryParameters['product'] ?? uri.queryParameters['p'];
+    final pid = int.tryParse((rawId ?? '').trim());
+    if (pid == null) return;
+    final target = products.where((p) => p.id == pid).firstOrNull;
+    if (target != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          openProduct(context, target);
+        }
+      });
     }
   } catch (_) {}
 }
@@ -162,10 +182,14 @@ void addRecent(Product p) {
   }
 }
 
+String buildProductShareLink(Product p) {
+  final base = html.window.location.href.split('?').first.split('#').first;
+  final cleanBase = base.endsWith('/') ? base : '$base/';
+  return '${cleanBase}?product=${p.id}';
+}
+
 void shareProductLink(BuildContext context, Product p) {
-  final base = html.window.location.href.split('#').first;
-  final sep = base.contains('?') ? '&' : '?';
-  final link = '${base}${sep}product=${p.id}';
+  final link = buildProductShareLink(p);
   try {
     html.window.navigator.clipboard?.writeText(link);
   } catch (_) {}
@@ -184,6 +208,77 @@ void openWhatsAppSupport(BuildContext context, {String? customText}) {
   } catch (_) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('WhatsApp link opened in browser')),
+    );
+  }
+}
+
+// Downloadable / Printable Order Invoice
+void downloadOrderInvoice(BuildContext context, Order o) {
+  final itemsRows = o.items
+      .map((item) => '<tr><td style="padding:8px;border-bottom:1px solid #eee;">$item</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">Included</td></tr>')
+      .join();
+  final customerName = profile.name.isNotEmpty
+      ? profile.name
+      : (profile.loggedInUser ?? 'Valued Customer');
+  final customerAddr = profile.address.isNotEmpty
+      ? '${profile.address} - ${profile.pin}'
+      : 'Style Shop Customer Address';
+
+  final htmlContent = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Invoice - ${o.id}</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 28px; color: #222; max-width: 720px; margin: auto; }
+    .hdr { display: flex; justify-content: space-between; border-bottom: 2px solid #2874F0; padding-bottom: 12px; margin-bottom: 20px; }
+    .brand { font-size: 24px; font-weight: bold; color: #2874F0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th { text-align: left; background: #f4f6fa; padding: 10px; border-bottom: 2px solid #ddd; }
+    .total { font-size: 18px; font-weight: bold; text-align: right; margin-top: 18px; }
+    .btn { margin-top: 24px; padding: 10px 18px; background: #2874F0; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+    @media print { .btn { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="hdr">
+    <div>
+      <div class="brand">Style Shop</div>
+      <div>Tax / Order Invoice</div>
+    </div>
+    <div style="text-align:right;">
+      <div><strong>Order ID:</strong> ${o.id}</div>
+      <div><strong>Status:</strong> ${o.statusLabel}</div>
+      <div><strong>Date:</strong> ${o.time.toString().split('.').first}</div>
+    </div>
+  </div>
+  <div>
+    <strong>Billed To:</strong> $customerName<br/>
+    <strong>Address:</strong> $customerAddr
+  </div>
+  <table>
+    <thead>
+      <tr><th>Item Description</th><th style="text-align:right;">Details</th></tr>
+    </thead>
+    <tbody>$itemsRows</tbody>
+  </table>
+  <div class="total">Grand Total: ₹${o.total}</div>
+  <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+</body>
+</html>
+''';
+
+  try {
+    final blob = html.Blob([htmlContent], 'text/html');
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    html.window.open(url, '_blank');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Invoice opened for ${o.id} (Print / Save PDF)')),
+    );
+  } catch (_) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not open invoice window')),
     );
   }
 }
@@ -233,6 +328,118 @@ void showSizeChartDialog(BuildContext context, Product p) {
       ],
     ),
   );
+}
+
+// Similar Products section on Detail Page
+class SimilarProductsSection extends StatelessWidget {
+  final Product currentProduct;
+  const SimilarProductsSection({super.key, required this.currentProduct});
+
+  @override
+  Widget build(BuildContext context) {
+    final similar = products
+        .where(
+          (item) =>
+              item.id != currentProduct.id &&
+              (item.group == currentProduct.group || item.tag == currentProduct.tag),
+        )
+        .take(6)
+        .toList();
+
+    if (similar.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        color: card(context),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Similar Products',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 205,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                for (final p in similar)
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) {
+                          addRecent(p);
+                          return DetailPage(product: p);
+                        }),
+                      );
+                    },
+                    child: Container(
+                      width: 135,
+                      margin: const EdgeInsets.only(right: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: NetImg(p),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            p.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Text(
+                                '₹${p.price}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '${p.off}% off',
+                                style: const TextStyle(
+                                  color: green,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class SaleTimer extends StatefulWidget {
@@ -362,6 +569,275 @@ class RecentlyViewed extends StatelessWidget {
       ),
     );
   }
+}
+
+// Admin Panel (Add Products + Manage Orders)
+class AdminPanelPage extends StatefulWidget {
+  const AdminPanelPage({super.key});
+
+  @override
+  State<AdminPanelPage> createState() => _AdminPanelPageState();
+}
+
+class _AdminPanelPageState extends State<AdminPanelPage> {
+  final nameCtrl = TextEditingController();
+  final brandCtrl = TextEditingController(text: 'Style Co');
+  final priceCtrl = TextEditingController(text: '1499');
+  final mrpCtrl = TextEditingController(text: '2499');
+  final stockCtrl = TextEditingController(text: '10');
+  String selectedGroup = 'Men';
+  String selectedTag = 'T-Shirt';
+
+  @override
+  void dispose() {
+    nameCtrl.dispose();
+    brandCtrl.dispose();
+    priceCtrl.dispose();
+    mrpCtrl.dispose();
+    stockCtrl.dispose();
+    super.dispose();
+  }
+
+  void _addProduct() {
+    final name = nameCtrl.text.trim();
+    final brand = brandCtrl.text.trim().isEmpty ? 'Style Co' : brandCtrl.text.trim();
+    final price = int.tryParse(priceCtrl.text.trim()) ?? 999;
+    final mrp = int.tryParse(mrpCtrl.text.trim()) ?? (price + 500);
+    final stock = int.tryParse(stockCtrl.text.trim()) ?? 10;
+
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Product name likhein')),
+      );
+      return;
+    }
+
+    final nextId = (products.map((e) => e.id).fold(0, (a, b) => a > b ? a : b)) + 1;
+    products.insert(
+      0,
+      Product(
+        nextId,
+        name,
+        brand,
+        selectedTag,
+        selectedGroup,
+        price,
+        mrp < price ? price + 400 : mrp,
+        4.5,
+        120,
+        Icons.shopping_bag,
+        blue,
+        px(15133974),
+        stock: stock,
+      ),
+    );
+    nameCtrl.clear();
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('"$name" store mein add ho gaya!')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: blueBar('Admin Panel'),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: card(context),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Add New Product',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Product Name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: brandCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Brand',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: selectedGroup,
+                        decoration: const InputDecoration(
+                          labelText: 'Category',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'Men', child: Text('Men')),
+                          DropdownMenuItem(value: 'Women', child: Text('Women')),
+                          DropdownMenuItem(value: 'Mobiles', child: Text('Mobiles')),
+                          DropdownMenuItem(value: 'Electronics', child: Text('Electronics')),
+                          DropdownMenuItem(value: 'Home', child: Text('Home')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => selectedGroup = v);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: selectedTag,
+                        decoration: const InputDecoration(
+                          labelText: 'Type Tag',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'T-Shirt', child: Text('T-Shirt')),
+                          DropdownMenuItem(value: 'Jacket', child: Text('Jacket')),
+                          DropdownMenuItem(value: 'Dress', child: Text('Dress')),
+                          DropdownMenuItem(value: 'Pant', child: Text('Pant')),
+                          DropdownMenuItem(value: 'Mobile', child: Text('Mobile')),
+                          DropdownMenuItem(value: 'Headphone', child: Text('Headphone')),
+                          DropdownMenuItem(value: 'Laptop', child: Text('Laptop')),
+                          DropdownMenuItem(value: 'Decor', child: Text('Decor')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => selectedTag = v);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: priceCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Sale Price (₹)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: mrpCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'MRP (₹)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: stockCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Stock',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: blue,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: _addProduct,
+                    icon: const Icon(Icons.add),
+                    label: const Text('ADD PRODUCT TO STORE'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          ListenableBuilder(
+            listenable: store,
+            builder: (context, _) => Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: card(context),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Manage Orders (${store.orders.length})',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  if (store.orders.isEmpty)
+                    const Text('Abhi koi order nahi hai', style: TextStyle(color: Colors.grey))
+                  else
+                    for (final o in store.orders)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text('${o.id} — ₹${o.total}'),
+                        subtitle: Text('Current Status: ${o.statusLabel}'),
+                        trailing: DropdownButton<String>(
+                          value: [
+                            'Placed',
+                            'Shipped',
+                            'Out for delivery',
+                            'Delivered',
+                            'Cancelled',
+                          ].contains(o.statusLabel)
+                              ? o.statusLabel
+                              : 'Placed',
+                          items: const [
+                            DropdownMenuItem(value: 'Placed', child: Text('Placed')),
+                            DropdownMenuItem(value: 'Shipped', child: Text('Shipped')),
+                            DropdownMenuItem(value: 'Out for delivery', child: Text('Out for delivery')),
+                            DropdownMenuItem(value: 'Delivered', child: Text('Delivered')),
+                            DropdownMenuItem(value: 'Cancelled', child: Text('Cancelled')),
+                          ],
+                          onChanged: (newStatus) {
+                            if (newStatus != null) {
+                              store.setOrderStatus(o.id, newStatus);
+                            }
+                          },
+                        ),
+                      ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void openAdminPanel(BuildContext context) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => const AdminPanelPage()),
+  );
 }
 
 Future<void> openLoginPopup(BuildContext context) async {
@@ -498,7 +974,7 @@ Future<void> openLoginPopup(BuildContext context) async {
                 ),
               ] else ...[
                 Text(
-                  'OTP sent to ${useEmail ? emailCtrl.text.trim() : '+91 ${phoneCtrl.text.trim()}'}',
+                  'Demo OTP sent to ${useEmail ? emailCtrl.text.trim() : '+91 ${phoneCtrl.text.trim()}'} (Test code: 1234)',
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 10),
@@ -529,7 +1005,7 @@ Future<void> openLoginPopup(BuildContext context) async {
                           ? () {
                               startResendTimer();
                               ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(content: Text('OTP resent!')),
+                                const SnackBar(content: Text('OTP resent! (Demo: 1234)')),
                               );
                             }
                           : null,
@@ -1172,6 +1648,14 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             child: Column(
               children: [
+                ListTile(
+                  leading: const Icon(Icons.admin_panel_settings_outlined, color: blue),
+                  title: const Text('Admin Panel'),
+                  subtitle: const Text('Add products & manage order status'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => openAdminPanel(context),
+                ),
+                const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.chat_bubble_outline),
                   title: const Text('Support chat'),

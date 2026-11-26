@@ -646,20 +646,20 @@ class Store extends ChangeNotifier {
     _sync();
   }
 
-  void cancelOrder(String orderId) {
+  void setOrderStatus(String orderId, String status) {
     final o = orders.where((e) => e.id == orderId).firstOrNull;
     if (o != null) {
-      o.statusOverride = 'Cancelled';
+      o.statusOverride = status;
       _sync();
     }
   }
 
+  void cancelOrder(String orderId) {
+    setOrderStatus(orderId, 'Cancelled');
+  }
+
   void returnOrder(String orderId) {
-    final o = orders.where((e) => e.id == orderId).firstOrNull;
-    if (o != null) {
-      o.statusOverride = 'Return Requested';
-      _sync();
-    }
+    setOrderStatus(orderId, 'Return Requested');
   }
 
   String reorder(Order oldOrder) {
@@ -1133,7 +1133,9 @@ class _RootPageState extends State<RootPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && profile.loggedInUser == null) {
+      if (!mounted) return;
+      handleDeepLinkIfAny(context);
+      if (profile.loggedInUser == null) {
         openLoginPopup(context);
       }
     });
@@ -1978,6 +1980,11 @@ class OrdersPage extends StatelessWidget {
                             icon: const Icon(Icons.local_shipping_outlined),
                             label: const Text('TRACK ORDER'),
                           ),
+                          TextButton.icon(
+                            onPressed: () => downloadOrderInvoice(context, o),
+                            icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                            label: const Text('INVOICE'),
+                          ),
                           if (o.statusOverride == null && o.step == 0)
                             TextButton.icon(
                               style: TextButton.styleFrom(
@@ -2451,6 +2458,7 @@ class _DetailPageState extends State<DetailPage> {
             style: const TextStyle(color: Colors.grey),
           ),
         ]),
+        SimilarProductsSection(currentProduct: p),
         ListenableBuilder(
           listenable: store,
           builder: (context, _) => section([
