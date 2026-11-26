@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-import 'package:material_ui/material_ui.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'extras.dart';
 
@@ -19,13 +19,11 @@ const Color green = Color(0xFF388E3C);
 const Color bg = Color(0xFFF1F3F6);
 
 String px(int id) =>
-    'https://images.pexels.com/photos/$id/pexels-photo-$id.jpeg?auto=compress&cs=tinysrgb&w=500';
+    'https://images.pexels.com/photos/$id/pexels-photo-$id.jpeg?auto=compress&cs=tinysrgb&w=600';
 
 // ---------- Theme helpers ----------
 
 final ValueNotifier<bool> darkMode = ValueNotifier<bool>(false);
-
-// Surface color: white in light mode, dark grey in dark mode
 Color card(BuildContext c) => Theme.of(c).colorScheme.surface;
 
 // ---------- Live location ----------
@@ -54,7 +52,10 @@ Future<void> updateLocation() async {
     final uri = Uri.parse(
       'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${pos.latitude}&lon=${pos.longitude}',
     );
-    final res = await http.get(uri);
+    final res = await http.get(
+      uri,
+      headers: {'User-Agent': 'StyleShopApp/1.0'},
+    );
     final data = jsonDecode(res.body) as Map;
     final a = (data['address'] ?? {}) as Map;
     final place =
@@ -71,7 +72,14 @@ Future<void> updateLocation() async {
   }
 }
 
-// ---------- Data ----------
+// ---------- Data & Variants ----------
+
+class ProductVariant {
+  final String colorName;
+  final Color swatch;
+  final List<String> images;
+  const ProductVariant(this.colorName, this.swatch, this.images);
+}
 
 class Product {
   final int id;
@@ -86,6 +94,7 @@ class Product {
   final IconData icon;
   final Color color;
   final String img;
+  final List<ProductVariant> variants;
 
   const Product(
     this.id,
@@ -99,25 +108,19 @@ class Product {
     this.reviews,
     this.icon,
     this.color,
-    this.img,
-  );
+    this.img, {
+    this.variants = const [],
+  });
 
   int get off => ((mrp - price) * 100 / mrp).round();
-
-  // Size sirf kapdon ke liye
   bool get isCloth => group == 'Men' || group == 'Women';
 
-  // Photo slider ke liye saari photos
-  List<String> get gallery => galleryExtra[id] ?? [img];
+  List<ProductVariant> get effectiveVariants => variants.isNotEmpty
+      ? variants
+      : [
+          ProductVariant('Default', color, [img]),
+        ];
 }
-
-// Har product ki extra photos yahan daalo  ->  id: [photo1, photo2, ...]
-final Map<int, List<String>> galleryExtra = {
-  1: [px(15133974), px(15133972), px(756484)],
-  2: [px(756484), px(1072036)],
-  3: [px(4380970), px(15133972)],
-  7: [px(1072036), px(756484)],
-};
 
 final List<Product> products = [
   Product(
@@ -131,8 +134,22 @@ final List<Product> products = [
     4.5,
     2341,
     Icons.checkroom,
-    Color(0xFF8B5E3C),
+    const Color(0xFF8B5E3C),
     px(15133974),
+    variants: [
+      ProductVariant('Brown', const Color(0xFF8B5E3C), [
+        px(15133974),
+        px(15133972),
+      ]),
+      ProductVariant('Camel', const Color(0xFFC19A6B), [
+        px(15133972),
+        px(756484),
+      ]),
+      ProductVariant('Black', const Color(0xFF222222), [
+        px(1072036),
+        px(15133974),
+      ]),
+    ],
   ),
   Product(
     2,
@@ -145,8 +162,18 @@ final List<Product> products = [
     4.7,
     1876,
     Icons.checkroom,
-    Color(0xFFB5651D),
+    const Color(0xFFB5651D),
     px(756484),
+    variants: [
+      ProductVariant('Tan', const Color(0xFFB5651D), [
+        px(756484),
+        px(1072036),
+      ]),
+      ProductVariant('Navy Blue', const Color(0xFF1E3A8A), [
+        px(1072036),
+        px(756484),
+      ]),
+    ],
   ),
   Product(
     3,
@@ -159,8 +186,18 @@ final List<Product> products = [
     4.4,
     3120,
     Icons.woman,
-    Color(0xFFD4537E),
+    const Color(0xFFD4537E),
     px(4380970),
+    variants: [
+      ProductVariant('Pink', const Color(0xFFD4537E), [
+        px(4380970),
+        px(15133972),
+      ]),
+      ProductVariant('Yellow', const Color(0xFFEAB308), [
+        px(15133972),
+        px(4380970),
+      ]),
+    ],
   ),
   Product(
     4,
@@ -173,8 +210,22 @@ final List<Product> products = [
     4.2,
     8932,
     Icons.dry_cleaning,
-    Color(0xFF1D9E75),
+    const Color(0xFF1D9E75),
     px(2379005),
+    variants: [
+      ProductVariant('Green', const Color(0xFF1D9E75), [
+        px(2379005),
+        px(997489),
+      ]),
+      ProductVariant('Maroon', const Color(0xFFA32D2D), [
+        px(997489),
+        px(2379005),
+      ]),
+      ProductVariant('White', const Color(0xFFF5F5F5), [
+        px(991509),
+        px(2379005),
+      ]),
+    ],
   ),
   Product(
     5,
@@ -187,8 +238,12 @@ final List<Product> products = [
     4.3,
     2210,
     Icons.man,
-    Color(0xFF378ADD),
+    const Color(0xFF378ADD),
     px(991509),
+    variants: [
+      ProductVariant('Blue', const Color(0xFF378ADD), [px(991509)]),
+      ProductVariant('Black', const Color(0xFF1F2937), [px(1072036)]),
+    ],
   ),
   Product(
     6,
@@ -201,7 +256,7 @@ final List<Product> products = [
     4.6,
     1543,
     Icons.woman,
-    Color(0xFFBA7517),
+    const Color(0xFFBA7517),
     px(15133972),
   ),
   Product(
@@ -215,8 +270,18 @@ final List<Product> products = [
     4.5,
     2987,
     Icons.checkroom,
-    Color(0xFF534AB7),
+    const Color(0xFF534AB7),
     px(1072036),
+    variants: [
+      ProductVariant('Indigo', const Color(0xFF534AB7), [
+        px(1072036),
+        px(756484),
+      ]),
+      ProductVariant('Brown', const Color(0xFF8B5E3C), [
+        px(756484),
+        px(1072036),
+      ]),
+    ],
   ),
   Product(
     8,
@@ -229,11 +294,9 @@ final List<Product> products = [
     4.1,
     6410,
     Icons.dry_cleaning,
-    Color(0xFFA32D2D),
+    const Color(0xFFA32D2D),
     px(997489),
   ),
-  // ----- Mobiles / Electronics / Home -----
-  // Agar koi photo na dikhe to Pexels se dusra ID daal do. Tab tak icon dikhega.
   Product(
     9,
     'Smartphone X',
@@ -245,8 +308,12 @@ final List<Product> products = [
     4.4,
     5210,
     Icons.smartphone,
-    Color(0xFF3C5A8B),
+    const Color(0xFF3C5A8B),
     px(404280),
+    variants: [
+      ProductVariant('Midnight Blue', const Color(0xFF1E3A8A), [px(404280)]),
+      ProductVariant('Graphite Black', const Color(0xFF222222), [px(18105)]),
+    ],
   ),
   Product(
     10,
@@ -259,8 +326,12 @@ final List<Product> products = [
     4.3,
     4120,
     Icons.headphones,
-    Color(0xFF6B3C8B),
+    const Color(0xFF6B3C8B),
     px(3394650),
+    variants: [
+      ProductVariant('Purple', const Color(0xFF6B3C8B), [px(3394650)]),
+      ProductVariant('Matte Black', const Color(0xFF1A1A1A), [px(18105)]),
+    ],
   ),
   Product(
     11,
@@ -273,7 +344,7 @@ final List<Product> products = [
     4.6,
     1290,
     Icons.laptop,
-    Color(0xFF444444),
+    const Color(0xFF444444),
     px(18105),
   ),
   Product(
@@ -287,7 +358,7 @@ final List<Product> products = [
     4.2,
     980,
     Icons.lightbulb,
-    Color(0xFFBA7517),
+    const Color(0xFFBA7517),
     px(1112598),
   ),
   Product(
@@ -301,7 +372,7 @@ final List<Product> products = [
     4.4,
     760,
     Icons.chair,
-    Color(0xFF1D9E75),
+    const Color(0xFF1D9E75),
     px(1866149),
   ),
 ];
@@ -325,7 +396,6 @@ class NetImg extends StatelessWidget {
       url ?? p.img,
       fit: fit,
       alignment: Alignment.topCenter,
-      webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
       loadingBuilder: (context, child, progress) =>
           progress == null ? child : fallback,
       errorBuilder: (context, error, stack) => fallback,
@@ -338,8 +408,19 @@ class NetImg extends StatelessWidget {
 class CartLine {
   final Product p;
   final String size;
+  final String colorName;
+  final String imageUrl;
+  final int unitPrice;
   int qty;
-  CartLine(this.p, this.size, this.qty);
+  CartLine(
+    this.p,
+    this.size,
+    this.qty, {
+    this.colorName = 'Default',
+    String? imageUrl,
+    int? unitPrice,
+  })  : imageUrl = imageUrl ?? p.img,
+        unitPrice = unitPrice ?? p.price;
 }
 
 class Order {
@@ -349,7 +430,6 @@ class Order {
   DateTime time = DateTime.now();
   Order(this.id, this.items, this.total);
 
-  // Demo: har 15 second mein agla step. Real app mein ye server se aayega.
   int get step => (DateTime.now().difference(time).inSeconds ~/ 15).clamp(0, 3);
 }
 
@@ -370,20 +450,35 @@ class Store extends ChangeNotifier {
   String? coupon;
 
   int get count => lines.fold(0, (a, l) => a + l.qty);
-  int get subTotal => lines.fold(0, (a, l) => a + l.p.price * l.qty);
+  int get subTotal => lines.fold(0, (a, l) => a + l.unitPrice * l.qty);
   int get mrpTotal => lines.fold(0, (a, l) => a + l.p.mrp * l.qty);
   int get couponOff => couponValue(coupon, subTotal);
   int get total => subTotal - couponOff;
 
-  void add(Product p, String size) {
+  void add(
+    Product p,
+    String size, {
+    String colorName = 'Default',
+    String? imageUrl,
+    int? unitPrice,
+  }) {
     for (final l in lines) {
-      if (l.p.id == p.id && l.size == size) {
+      if (l.p.id == p.id && l.size == size && l.colorName == colorName) {
         l.qty++;
         notifyListeners();
         return;
       }
     }
-    lines.add(CartLine(p, size, 1));
+    lines.add(
+      CartLine(
+        p,
+        size,
+        1,
+        colorName: colorName,
+        imageUrl: imageUrl,
+        unitPrice: unitPrice,
+      ),
+    );
     notifyListeners();
   }
 
@@ -434,7 +529,7 @@ class Store extends ChangeNotifier {
         lines
             .map(
               (l) =>
-                  '${l.p.name}${l.p.isCloth ? ' (${l.size})' : ''} x${l.qty}',
+                  '${l.p.name} [${l.colorName}${l.p.isCloth ? ', ${l.size}' : ''}] x${l.qty}',
             )
             .toList(),
         total,
@@ -449,14 +544,87 @@ class Store extends ChangeNotifier {
 
 final Store store = Store();
 
-// ---------- Small shared widgets ----------
+// ---------- GLOBAL LOGO & HEADER BAR (HAR PAGE PAR DIKHEGA) ----------
 
-AppBar blueBar(String title, {List<Widget>? actions}) => AppBar(
-  title: Text(title),
+class BrandLogo extends StatelessWidget {
+  const BrandLogo({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Image.asset(
+        'assets/logo.png',
+        height: 28,
+        errorBuilder: (context, error, stack) => const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.shopping_bag, color: blue, size: 18),
+            SizedBox(width: 4),
+            Text(
+              'Style Shop',
+              style: TextStyle(
+                color: blue,
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+PreferredSizeWidget blueBar(String title, {List<Widget>? actions}) => AppBar(
   backgroundColor: blue,
   foregroundColor: Colors.white,
-  actions: actions,
+  elevation: 2,
+  titleSpacing: 12,
+  title: Row(
+    children: [
+      const BrandLogo(),
+      if (title.isNotEmpty) ...[
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    ],
+  ),
+  actions: [
+    ...?actions,
+    ListenableBuilder(
+      listenable: store,
+      builder: (context, _) => IconButton(
+        tooltip: 'Cart',
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CartPage()),
+          );
+        },
+        icon: Badge(
+          label: Text('${store.count}'),
+          isLabelVisible: store.count > 0,
+          child: const Icon(Icons.shopping_cart_outlined, color: Colors.white),
+        ),
+      ),
+    ),
+    const SizedBox(width: 4),
+  ],
 );
+
+// ---------- Shared Widgets ----------
 
 class RatingChip extends StatelessWidget {
   final double rating;
@@ -490,17 +658,20 @@ class RatingChip extends StatelessWidget {
 
 class PriceRow extends StatelessWidget {
   final Product p;
+  final int? overridePrice;
   final bool big;
-  const PriceRow(this.p, {super.key, this.big = false});
+  const PriceRow(this.p, {super.key, this.overridePrice, this.big = false});
 
   @override
   Widget build(BuildContext context) {
+    final activePrice = overridePrice ?? p.price;
+    final offPct = ((p.mrp - activePrice) * 100 / p.mrp).round();
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: 6,
       children: [
         Text(
-          '₹${p.price}',
+          '₹$activePrice',
           style: TextStyle(
             fontSize: big ? 24 : 15,
             fontWeight: FontWeight.bold,
@@ -515,7 +686,7 @@ class PriceRow extends StatelessWidget {
           ),
         ),
         Text(
-          '${p.off}% off',
+          '$offPct% off',
           style: TextStyle(
             fontSize: big ? 15 : 12,
             color: green,
@@ -540,7 +711,7 @@ class HeartButton extends StatelessWidget {
         return GestureDetector(
           onTap: () => store.toggleWish(p),
           child: CircleAvatar(
-            radius: 15,
+            radius: 16,
             backgroundColor: Colors.white,
             child: Icon(
               on ? Icons.favorite : Icons.favorite_border,
@@ -590,7 +761,11 @@ class ProductCard extends StatelessWidget {
     return GestureDetector(
       onTap: () => openProduct(context, p),
       child: Container(
-        color: card(context),
+        decoration: BoxDecoration(
+          color: card(context),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -642,58 +817,6 @@ class ProductCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ---------- Photo slider with zoom ----------
-
-class Gallery extends StatefulWidget {
-  final Product p;
-  const Gallery(this.p, {super.key});
-
-  @override
-  State<Gallery> createState() => _GalleryState();
-}
-
-class _GalleryState extends State<Gallery> {
-  int i = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final imgs = widget.p.gallery;
-    return Stack(
-      children: [
-        PageView.builder(
-          itemCount: imgs.length,
-          onPageChanged: (v) => setState(() => i = v),
-          itemBuilder: (context, k) => InteractiveViewer(
-            minScale: 1,
-            maxScale: 4,
-            child: NetImg(widget.p, url: imgs[k], fit: BoxFit.contain),
-          ),
-        ),
-        Positioned(
-          bottom: 8,
-          left: 0,
-          right: 0,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (int k = 0; k < imgs.length; k++)
-                Container(
-                  margin: const EdgeInsets.all(3),
-                  width: i == k ? 14 : 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: i == k ? blue : Colors.grey,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
@@ -862,9 +985,7 @@ class ShopApp extends StatelessWidget {
         ),
         builder: (context, child) => ColoredBox(
           color: Theme.of(context).scaffoldBackgroundColor,
-          child: Center(
-            child: FrameWidth(child: child),
-          ),
+          child: Center(child: FrameWidth(child: child)),
         ),
         navigatorObservers: [WidthObserver()],
         home: const RootPage(),
@@ -981,13 +1102,11 @@ class _HomeTabState extends State<HomeTab> {
   final GlobalKey gridKey = GlobalKey();
   final TextEditingController searchCtrl = TextEditingController();
 
-  // sort / filter
   String sort = 'Relevance';
   String brandF = 'All';
   double minRating = 0;
   double maxPrice = 60000;
 
-  // voice search
   final stt.SpeechToText speech = stt.SpeechToText();
   bool listening = false;
 
@@ -1207,35 +1326,10 @@ class _HomeTabState extends State<HomeTab> {
               child: Column(
                 children: [
                   const SizedBox(height: 8),
-                  // ----- Style Shop logo -----
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Image.asset(
-                        'assets/logo.png',
-                        height: 40,
-                        errorBuilder: (context, error, stack) => const Text(
-                          'Style Shop',
-                          style: TextStyle(
-                            color: blue,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 20,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                   Row(
                     children: [
+                      const BrandLogo(),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -1247,7 +1341,7 @@ class _HomeTabState extends State<HomeTab> {
                                 const Icon(
                                   Icons.location_on,
                                   color: Colors.white,
-                                  size: 18,
+                                  size: 16,
                                 ),
                                 Flexible(
                                   child: Text(
@@ -1256,15 +1350,10 @@ class _HomeTabState extends State<HomeTab> {
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       color: Colors.white,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 6),
-                                const Icon(
-                                  Icons.my_location,
-                                  color: Colors.white,
-                                  size: 16,
                                 ),
                               ],
                             ),
@@ -1375,6 +1464,7 @@ class _HomeTabState extends State<HomeTab> {
                                         : NetImg(
                                             products.firstWhere(
                                               (p) => p.tag == c || p.group == c,
+                                              orElse: () => products.first,
                                             ),
                                           ),
                                   ),
@@ -1796,7 +1886,7 @@ class _TrackPageState extends State<TrackPage> {
   }
 }
 
-// ---------- Product details ----------
+// ---------- SINGLE PRODUCT PAGE (MODERN CLEAN LAYOUT + COLOR/SIZE VARIANT SWITCHING) ----------
 
 class DetailPage extends StatefulWidget {
   final Product product;
@@ -1808,12 +1898,26 @@ class DetailPage extends StatefulWidget {
 
 class _DetailPageState extends State<DetailPage> {
   String size = 'M';
+  int selectedVariantIndex = 0;
+  int selectedImageIndex = 0;
+
+  // Size ke hisaab se price difference (e.g., XL/XXL thoda zyada)
+  int get currentPrice {
+    final base = widget.product.price;
+    if (!widget.product.isCloth) return base;
+    if (size == 'XL') return base + 100;
+    if (size == 'XXL') return base + 200;
+    return base;
+  }
 
   Widget section(List<Widget> children) => Container(
     width: double.infinity,
-    margin: const EdgeInsets.only(top: 8),
+    margin: const EdgeInsets.only(top: 10),
     padding: const EdgeInsets.all(16),
-    color: card(context),
+    decoration: BoxDecoration(
+      color: card(context),
+      borderRadius: BorderRadius.circular(10),
+    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: children,
@@ -1823,173 +1927,365 @@ class _DetailPageState extends State<DetailPage> {
   @override
   Widget build(BuildContext context) {
     final p = widget.product;
-    final chosen = p.isCloth ? size : 'Standard';
+    final variants = p.effectiveVariants;
+    final currentVariant = variants[selectedVariantIndex];
+    final images = currentVariant.images;
+    final activeImg =
+        images[selectedImageIndex.clamp(0, images.length - 1)];
+    final chosenSize = p.isCloth ? size : 'Standard';
     final onSurface = Theme.of(context).colorScheme.onSurface;
-    return Scaffold(
-      appBar: blueBar(p.brand),
-      body: ListView(
+    final isWide = MediaQuery.of(context).size.width > 760;
+
+    // Image Gallery + Thumbnails Widget
+    final galleryWidget = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: card(context),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
         children: [
-          Container(
-            color: card(context),
-            height: 340,
-            child: Stack(
-              children: [
-                Positioned.fill(child: Gallery(p)),
-                Positioned(top: 10, right: 10, child: HeartButton(p)),
-              ],
-            ),
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  height: isWide ? 420 : 320,
+                  width: double.infinity,
+                  child: InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 4,
+                    child: NetImg(p, url: activeImg, fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+              Positioned(top: 8, right: 8, child: HeartButton(p)),
+            ],
           ),
-          section([
-            Text(
-              p.name,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          if (images.length > 1) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 64,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                shrinkWrap: true,
+                itemCount: images.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (context, idx) {
+                  final selected = idx == selectedImageIndex;
+                  return GestureDetector(
+                    onTap: () => setState(() => selectedImageIndex = idx),
+                    child: Container(
+                      width: 64,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected ? blue : Colors.grey.shade300,
+                          width: selected ? 2.5 : 1,
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: NetImg(p, url: images[idx], fit: BoxFit.cover),
+                    ),
+                  );
+                },
+              ),
             ),
-            const SizedBox(height: 6),
+          ],
+        ],
+      ),
+    );
+
+    // Product Info, Color & Size Selectors
+    final infoWidget = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: card(context),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                p.brand.toUpperCase(),
+                style: const TextStyle(
+                  color: blue,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${p.name} (${currentVariant.colorName})',
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  RatingChip(p.rating),
+                  Text(
+                    '  ${p.reviews} ratings & reviews',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              PriceRow(p, overridePrice: currentPrice, big: true),
+              const Text(
+                'Inclusive of all taxes',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+
+        // COLOR SELECTOR (Color badalne par image aur title update hoga)
+        section([
+          Row(
+            children: [
+              const Text(
+                'Color: ',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                currentVariant.colorName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: blue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            children: [
+              for (int idx = 0; idx < variants.length; idx++)
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      selectedVariantIndex = idx;
+                      selectedImageIndex = 0;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: selectedVariantIndex == idx
+                            ? blue
+                            : Colors.grey.shade400,
+                        width: selectedVariantIndex == idx ? 2 : 1,
+                      ),
+                      color: selectedVariantIndex == idx
+                          ? blue.withAlpha(20)
+                          : Colors.transparent,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircleAvatar(
+                          radius: 10,
+                          backgroundColor: variants[idx].swatch,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          variants[idx].colorName,
+                          style: TextStyle(
+                            fontWeight: selectedVariantIndex == idx
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ]),
+
+        // SIZE SELECTOR (Size badalne par price aur variant update hoga)
+        if (p.isCloth)
+          section([
             Row(
               children: [
-                RatingChip(p.rating),
+                const Text(
+                  'Select Size: ',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
                 Text(
-                  '  ${p.reviews} ratings',
-                  style: const TextStyle(color: Colors.grey),
+                  size,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: blue,
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 10),
-            PriceRow(p, big: true),
-            const Text(
-              'Inclusive of all taxes',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-          ]),
-          section([
-            const Row(
+            Wrap(
+              spacing: 10,
               children: [
-                Icon(Icons.local_shipping_outlined, color: green),
-                Text(
-                  '  Free delivery by tomorrow, 10 AM',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Row(
-              children: [
-                Icon(Icons.replay, color: Colors.grey),
-                Text(
-                  '  7 days easy returns',
-                  style: TextStyle(color: Colors.grey),
-                ),
+                for (final s in ['S', 'M', 'L', 'XL', 'XXL'])
+                  ChoiceChip(
+                    label: Text(s),
+                    selected: size == s,
+                    showCheckmark: false,
+                    selectedColor: blue,
+                    labelStyle: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: size == s ? Colors.white : null,
+                    ),
+                    onSelected: (_) => setState(() => size = s),
+                  ),
               ],
             ),
           ]),
-          section([
-            const Text(
-              'Available offers',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+
+        section([
+          const Row(
+            children: [
+              Icon(Icons.local_shipping_outlined, color: green),
+              Text(
+                '  Free delivery by tomorrow, 10 AM',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Row(
+            children: [
+              Icon(Icons.replay, color: Colors.grey),
+              Text(
+                '  7 days easy returns',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+        ]),
+
+        section([
+          const Text(
+            'Available offers',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          for (final o in [
+            'Bank Offer: 10% instant discount on UPI payments',
+            'Coupon: Use SAVE10 to get extra 10% off at cart',
+            'No cost EMI on orders above ₹3,000',
+          ])
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.local_offer, color: green, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(o)),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            for (final o in [
-              'Bank Offer: 10% instant discount on UPI payments',
-              'Coupon: Use SAVE10 to get extra 10% off at cart',
-              'No cost EMI on orders above ₹3,000',
-            ])
+        ]),
+
+        section([
+          const Text(
+            'Product details',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${p.name} in ${currentVariant.colorName} by ${p.brand}. Soft, comfortable and made to last.',
+            style: const TextStyle(color: Colors.grey),
+          ),
+        ]),
+
+        ListenableBuilder(
+          listenable: store,
+          builder: (context, _) => section([
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Ratings & Reviews',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => writeReview(context, p),
+                  child: const Text('WRITE REVIEW'),
+                ),
+              ],
+            ),
+            for (final r in store.reviewsFor(p))
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.local_offer, color: green, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(o)),
+                    Row(
+                      children: [
+                        Text(
+                          r.name,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(width: 8),
+                        for (int i = 0; i < 5; i++)
+                          Icon(
+                            i < r.stars ? Icons.star : Icons.star_border,
+                            size: 14,
+                            color: Colors.amber,
+                          ),
+                      ],
+                    ),
+                    Text(r.text, style: const TextStyle(color: Colors.grey)),
                   ],
                 ),
               ),
           ]),
-          ProductExtras(p),
-          if (p.isCloth)
-            section([
-              const Text(
-                'Select size',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
+        ),
+      ],
+    );
+
+    return Scaffold(
+      appBar: blueBar(p.brand),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(12),
+        child: isWide
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final s in ['S', 'M', 'L', 'XL', 'XXL'])
-                    ChoiceChip(
-                      label: Text(s),
-                      selected: size == s,
-                      showCheckmark: false,
-                      selectedColor: blue,
-                      labelStyle: TextStyle(
-                        color: size == s ? Colors.white : null,
-                      ),
-                      onSelected: (_) => setState(() => size = s),
-                    ),
+                  Expanded(flex: 5, child: galleryWidget),
+                  const SizedBox(width: 16),
+                  Expanded(flex: 6, child: infoWidget),
+                ],
+              )
+            : Column(
+                children: [
+                  galleryWidget,
+                  const SizedBox(height: 10),
+                  infoWidget,
                 ],
               ),
-            ]),
-          section([
-            const Text(
-              'Product details',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '${p.name} by ${p.brand}. Soft, comfortable and made to last. A great everyday piece that goes with almost everything.',
-              style: const TextStyle(color: Colors.grey),
-            ),
-          ]),
-          ListenableBuilder(
-            listenable: store,
-            builder: (context, _) => section([
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Ratings & Reviews',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => writeReview(context, p),
-                    child: const Text('WRITE REVIEW'),
-                  ),
-                ],
-              ),
-              for (final r in store.reviewsFor(p))
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            r.name,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(width: 8),
-                          for (int i = 0; i < 5; i++)
-                            Icon(
-                              i < r.stars ? Icons.star : Icons.star_border,
-                              size: 14,
-                              color: Colors.amber,
-                            ),
-                        ],
-                      ),
-                      Text(r.text, style: const TextStyle(color: Colors.grey)),
-                    ],
-                  ),
-                ),
-            ]),
-          ),
-          const SizedBox(height: 12),
-        ],
       ),
       bottomNavigationBar: SafeArea(
         child: Row(
@@ -2004,11 +2300,17 @@ class _DetailPageState extends State<DetailPage> {
                     shape: const RoundedRectangleBorder(),
                   ),
                   onPressed: () {
-                    store.add(p, chosen + ' / ' + pickedColor.value);
+                    store.add(
+                      p,
+                      chosenSize,
+                      colorName: currentVariant.colorName,
+                      imageUrl: activeImg,
+                      unitPrice: currentPrice,
+                    );
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                          '${p.name}${p.isCloth ? ' ($size)' : ''} added to cart',
+                          '${p.name} (${currentVariant.colorName}${p.isCloth ? ', $size' : ''}) added to cart',
                         ),
                         duration: const Duration(seconds: 1),
                       ),
@@ -2031,7 +2333,13 @@ class _DetailPageState extends State<DetailPage> {
                     shape: const RoundedRectangleBorder(),
                   ),
                   onPressed: () {
-                    store.add(p, chosen + ' / ' + pickedColor.value);
+                    store.add(
+                      p,
+                      chosenSize,
+                      colorName: currentVariant.colorName,
+                      imageUrl: activeImg,
+                      unitPrice: currentPrice,
+                    );
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const CheckoutPage()),
@@ -2099,7 +2407,7 @@ class CartPage extends StatelessWidget {
                               child: SizedBox(
                                 width: 80,
                                 height: 100,
-                                child: NetImg(l.p),
+                                child: NetImg(l.p, url: l.imageUrl),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -2113,16 +2421,15 @@ class CartPage extends StatelessWidget {
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  if (l.p.isCloth)
-                                    Text(
-                                      'Size: ${l.size}',
-                                      style: const TextStyle(
-                                        color: Colors.grey,
-                                        fontSize: 12,
-                                      ),
+                                  Text(
+                                    'Color: ${l.colorName}${l.p.isCloth ? '  •  Size: ${l.size}' : ''}',
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 12,
                                     ),
+                                  ),
                                   const SizedBox(height: 4),
-                                  PriceRow(l.p),
+                                  PriceRow(l.p, overridePrice: l.unitPrice),
                                   Row(
                                     children: [
                                       IconButton(
@@ -2438,6 +2745,7 @@ class SuccessPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: blueBar('Order Confirmed'),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -2474,27 +2782,32 @@ class SuccessPage extends StatelessWidget {
     );
   }
 }
+
 // ---------- Desktop / window support ----------
 
 final ValueNotifier<double> frameWidth = ValueNotifier<double>(1600);
 
 class WidthObserver extends NavigatorObserver {
   void _set(Route<dynamic>? r) {
-    final w = (r == null || r.isFirst) ? 1600.0 : 720.0;
+    final w = (r == null || r.isFirst) ? 1600.0 : 1200.0;
     WidgetsBinding.instance.addPostFrameCallback((_) => frameWidth.value = w);
   }
 
   @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => _set(route);
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _set(route);
 
   @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => _set(previousRoute);
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _set(previousRoute);
 
   @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) => _set(newRoute);
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
+      _set(newRoute);
 
   @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) => _set(previousRoute);
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _set(previousRoute);
 }
 
 class FrameWidth extends StatelessWidget {
@@ -2508,7 +2821,8 @@ class FrameWidth extends StatelessWidget {
       builder: (context, w, _) => TweenAnimationBuilder<double>(
         tween: Tween<double>(begin: w, end: w),
         duration: const Duration(milliseconds: 250),
-        builder: (context, v, c) => ConstrainedBox(constraints: BoxConstraints(maxWidth: v), child: c),
+        builder: (context, v, c) =>
+            ConstrainedBox(constraints: BoxConstraints(maxWidth: v), child: c),
         child: child,
       ),
     );
