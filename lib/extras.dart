@@ -4,7 +4,18 @@ import 'dart:convert';
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'main.dart';
+
+const String kSupabaseUrl = 'https://fforcyaoyscgjdbtqpvp.supabase.co';
+const String kSupabaseKey = 'sb_publishable_vUttKc25oC5lTNxS8ikaAQ_3gNH3V7g';
+
+Map<String, String> get _sbHeaders => {
+      'apikey': kSupabaseKey,
+      'Authorization': 'Bearer $kSupabaseKey',
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates,return=minimal',
+    };
 
 class SavedAddress {
   final String label;
@@ -100,12 +111,111 @@ void saveProfileToStorage() {
 
 void saveStoreToStorage() {
   _writeStorage(_kStoreKey, jsonEncode(store.toJson()));
+  unawaited(syncOrdersToSupabase());
 }
 
 void saveCatalogToStorage() {
   try {
     final encoded = jsonEncode(products.map((p) => p.toJson()).toList());
     _writeStorage(_kCustomProductsKey, encoded);
+  } catch (_) {}
+  unawaited(syncCatalogToSupabase());
+}
+
+Future<void> syncCatalogToSupabase() async {
+  try {
+    if (products.isEmpty) return;
+    final rows = products
+        .map((p) => {'id': p.id, 'data': p.toJson()})
+        .toList();
+    await http.post(
+      Uri.parse('$kSupabaseUrl/rest/v1/store_products'),
+      headers: _sbHeaders,
+      body: jsonEncode(rows),
+    );
+  } catch (_) {}
+}
+
+Future<void> deleteProductFromSupabase(int productId) async {
+  try {
+    await http.delete(
+      Uri.parse('$kSupabaseUrl/rest/v1/store_products?id=eq.$productId'),
+      headers: _sbHeaders,
+    );
+  } catch (_) {}
+}
+
+Future<void> syncOrdersToSupabase() async {
+  try {
+    if (store.orders.isEmpty) return;
+    final rows = store.orders
+        .map((o) => {'id': o.id, 'data': o.toJson()})
+        .toList();
+    await http.post(
+      Uri.parse('$kSupabaseUrl/rest/v1/store_orders'),
+      headers: _sbHeaders,
+      body: jsonEncode(rows),
+    );
+  } catch (_) {}
+}
+
+Future<void> deleteOrderFromSupabase(String orderId) async {
+  try {
+    await http.delete(
+      Uri.parse('$kSupabaseUrl/rest/v1/store_orders?id=eq.$orderId'),
+      headers: _sbHeaders,
+    );
+  } catch (_) {}
+}
+
+Future<void> fetchFromSupabase() async {
+  try {
+    final prodRes = await http.get(
+      Uri.parse('$kSupabaseUrl/rest/v1/store_products?select=id,data&order=id.desc'),
+      headers: _sbHeaders,
+    );
+    if (prodRes.statusCode == 200) {
+      final list = jsonDecode(prodRes.body) as List;
+      if (list.isNotEmpty) {
+        final cloudProducts = list
+            .map((row) => Product.fromJson(
+                  Map<String, dynamic>.from((row as Map)['data'] as Map),
+                ))
+            .toList();
+        products
+          ..clear()
+          ..addAll(cloudProducts);
+        _writeStorage(
+          _kCustomProductsKey,
+          jsonEncode(products.map((p) => p.toJson()).toList()),
+        );
+        catalogVersion.value++;
+      } else {
+        await syncCatalogToSupabase();
+      }
+    }
+
+    final ordRes = await http.get(
+      Uri.parse('$kSupabaseUrl/rest/v1/store_orders?select=id,data&order=created_at.desc'),
+      headers: _sbHeaders,
+    );
+    if (ordRes.statusCode == 200) {
+      final list = jsonDecode(ordRes.body) as List;
+      if (list.isNotEmpty) {
+        final cloudOrders = list
+            .map((row) => Order.fromJson(
+                  Map<String, dynamic>.from((row as Map)['data'] as Map),
+                ))
+            .toList();
+        store.orders
+          ..clear()
+          ..addAll(cloudOrders);
+        _writeStorage(_kStoreKey, jsonEncode(store.toJson()));
+        store.notifyListeners();
+      } else if (store.orders.isNotEmpty) {
+        await syncOrdersToSupabase();
+      }
+    }
   } catch (_) {}
 }
 
@@ -128,8 +238,6 @@ Future<void> loadSaved() async {
           ..clear()
           ..addAll(loadedProducts);
       }
-    } else {
-      saveCatalogToStorage();
     }
 
     final pRaw = _readStorage(_kProfileKey);
@@ -147,10 +255,11 @@ Future<void> loadSaved() async {
     if (sRaw != null && sRaw.isNotEmpty) {
       store.loadFromJson(jsonDecode(sRaw) as Map<String, dynamic>);
     }
+
+    await fetchFromSupabase();
   } catch (_) {}
 }
 
-// Pick image or video file from device (Web)
 Future<String?> pickMediaFileFromDevice({required bool isVideo}) async {
   final completer = Completer<String?>();
   try {
@@ -203,7 +312,6 @@ bool isVideoMediaUrl(String url) {
       lower.contains('blob:');
 }
 
-// Web Video Preview Widget for Detail Page
 class WebVideoPlayer extends StatelessWidget {
   final String url;
   final double height;
@@ -256,7 +364,6 @@ class WebVideoPlayer extends StatelessWidget {
   }
 }
 
-// Deep-link support (?product=ID)
 void handleDeepLinkIfAny(BuildContext context) {
   try {
     final uri = Uri.parse(html.window.location.href);
@@ -346,7 +453,7 @@ void openWhatsAppSupport(BuildContext context, {String? customText}) {
   }
 }
 
-// Downloadable / Printable Order Invoice
+// Downloadable / Printable Order Invoice with GST Breakup
 void downloadOrderInvoice(BuildContext context, Order o) {
   final itemsRows = o.items
       .map(
@@ -361,6 +468,11 @@ void downloadOrderInvoice(BuildContext context, Order o) {
       ? '${profile.address} - ${profile.pin}'
       : 'Style Shop Customer Address';
 
+  final baseAmount = (o.total / 1.18).round();
+  final gstAmount = o.total - baseAmount;
+  final cgst = (gstAmount / 2).toStringAsFixed(2);
+  final sgst = (gstAmount - double.parse(cgst)).toStringAsFixed(2);
+
   final htmlContent = '''
 <!DOCTYPE html>
 <html>
@@ -373,7 +485,9 @@ void downloadOrderInvoice(BuildContext context, Order o) {
     .brand { font-size: 24px; font-weight: bold; color: #2874F0; }
     table { width: 100%; border-collapse: collapse; margin-top: 16px; }
     th { text-align: left; background: #f4f6fa; padding: 10px; border-bottom: 2px solid #ddd; }
-    .total { font-size: 18px; font-weight: bold; text-align: right; margin-top: 18px; }
+    .summary { margin-top: 18px; margin-left: auto; width: 280px; }
+    .summary div { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+    .total { font-size: 18px; font-weight: bold; border-top: 2px solid #222; padding-top: 8px !important; margin-top: 6px; }
     .btn { margin-top: 24px; padding: 10px 18px; background: #2874F0; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
     @media print { .btn { display: none; } }
   </style>
@@ -382,7 +496,7 @@ void downloadOrderInvoice(BuildContext context, Order o) {
   <div class="hdr">
     <div>
       <div class="brand">Style Shop</div>
-      <div>Tax / Order Invoice</div>
+      <div>Tax / GST Order Invoice</div>
     </div>
     <div style="text-align:right;">
       <div><strong>Order ID:</strong> ${o.id}</div>
@@ -400,7 +514,13 @@ void downloadOrderInvoice(BuildContext context, Order o) {
     </thead>
     <tbody>$itemsRows</tbody>
   </table>
-  <div class="total">Grand Total: ₹${o.total}</div>
+  <div class="summary">
+    <div><span>Taxable Value:</span><span>₹$baseAmount</span></div>
+    <div><span>CGST (9%):</span><span>₹$cgst</span></div>
+    <div><span>SGST (9%):</span><span>₹$sgst</span></div>
+    <div><span>Delivery:</span><span>FREE</span></div>
+    <div class="total"><span>Grand Total:</span><span>₹${o.total}</span></div>
+  </div>
   <button class="btn" onclick="window.print()">Print / Save as PDF</button>
 </body>
 </html>
@@ -411,7 +531,7 @@ void downloadOrderInvoice(BuildContext context, Order o) {
     final url = html.Url.createObjectUrlFromBlob(blob);
     html.window.open(url, '_blank');
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Invoice opened for ${o.id} (Print / Save PDF)')),
+      SnackBar(content: Text('GST Invoice opened for ${o.id} (Print / Save PDF)')),
     );
   } catch (_) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -467,7 +587,6 @@ void showSizeChartDialog(BuildContext context, Product p) {
   );
 }
 
-// Similar Products section on Detail Page
 class SimilarProductsSection extends StatelessWidget {
   final Product currentProduct;
   const SimilarProductsSection({super.key, required this.currentProduct});
@@ -708,7 +827,6 @@ class RecentlyViewed extends StatelessWidget {
   }
 }
 
-// Admin Panel (Add Products with Color Variants, Upload Image/Video + Remove Products + Manage Orders)
 class AdminPanelPage extends StatefulWidget {
   const AdminPanelPage({super.key});
 
@@ -724,17 +842,14 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
   final stockCtrl = TextEditingController(text: '10');
   final videoUrlCtrl = TextEditingController();
 
-  // Variant 1
   final c1NameCtrl = TextEditingController(text: 'Black');
   final c1ImgCtrl = TextEditingController(text: px(1072036));
   Color c1Color = const Color(0xFF222222);
 
-  // Variant 2
   final c2NameCtrl = TextEditingController(text: 'Brown');
   final c2ImgCtrl = TextEditingController(text: px(15133974));
   Color c2Color = const Color(0xFF8B5E3C);
 
-  // Variant 3
   final c3NameCtrl = TextEditingController(text: 'Blue');
   final c3ImgCtrl = TextEditingController(text: px(991509));
   Color c3Color = const Color(0xFF378ADD);
@@ -977,7 +1092,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '"$name" (${builtVariants.length} variants) store mein add ho gaya!',
+          '"$name" Supabase cloud mein save ho gaya!',
         ),
       ),
     );
@@ -989,18 +1104,36 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     store.wish.remove(p.id);
     store.lines.removeWhere((line) => line.p.id == p.id);
     saveCatalogToStorage();
+    unawaited(deleteProductFromSupabase(p.id));
     saveStoreToStorage();
     catalogVersion.value++;
     setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('"${p.name}" store se remove kar diya gaya')),
+      SnackBar(content: Text('"${p.name}" store aur Supabase se remove kar diya gaya')),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: blueBar('Admin Panel'),
+      appBar: blueBar(
+        'Admin Panel',
+        actions: [
+          IconButton(
+            tooltip: 'Sync from Supabase',
+            onPressed: () async {
+              await fetchFromSupabase();
+              if (mounted) {
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Supabase data synced!')),
+                );
+              }
+            },
+            icon: const Icon(Icons.cloud_sync, color: Colors.white),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
@@ -1014,7 +1147,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Add New Product',
+                  'Add New Product (Cloud Synced)',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 10),
@@ -1038,7 +1171,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: selectedGroup,
+                        initialValue: selectedGroup,
                         decoration: const InputDecoration(
                           labelText: 'Category',
                           border: OutlineInputBorder(),
@@ -1058,7 +1191,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: selectedTag,
+                        initialValue: selectedTag,
                         decoration: const InputDecoration(
                           labelText: 'Type Tag',
                           border: OutlineInputBorder(),

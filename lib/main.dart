@@ -695,6 +695,7 @@ class Store extends ChangeNotifier {
 
   void removeOrder(String orderId) {
     orders.removeWhere((o) => o.id == orderId);
+    unawaited(deleteOrderFromSupabase(orderId));
     _sync();
   }
 
@@ -1485,7 +1486,7 @@ class _HomeTabState extends State<HomeTab> {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<int>(
       valueListenable: catalogVersion,
-      builder: (context, _, _) {
+      builder: (context, _, __) {
         final shown = products
             .where((p) => filter == 'All' || p.tag == filter || p.group == filter)
             .where(
