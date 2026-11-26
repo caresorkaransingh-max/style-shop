@@ -549,7 +549,7 @@ class Store extends ChangeNotifier {
 
 final Store store = Store();
 
-// ---------- GLOBAL LOGO & HEADER BAR (HAR PAGE PAR DIKHEGA) ----------
+// ---------- GLOBAL LOGO & HEADER BAR ----------
 
 class BrandLogo extends StatelessWidget {
   const BrandLogo({super.key});
@@ -1010,6 +1010,14 @@ class _RootPageState extends State<RootPage> {
   int tab = 0;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) openLoginPopup(context);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
       const HomeTab(),
@@ -1020,6 +1028,13 @@ class _RootPageState extends State<RootPage> {
     ];
     return Scaffold(
       body: pages[tab],
+      floatingActionButton: FloatingActionButton(
+        tooltip: 'Support Chat',
+        backgroundColor: blue,
+        foregroundColor: Colors.white,
+        onPressed: () => openSupportChat(context),
+        child: const Icon(Icons.chat_bubble_outline),
+      ),
       bottomNavigationBar: ListenableBuilder(
         listenable: store,
         builder: (context, _) => NavigationBar(

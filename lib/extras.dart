@@ -19,9 +19,7 @@ class UserProfile {
 final UserProfile profile = UserProfile();
 final List<Product> recentlyViewed = [];
 
-Future<void> loadSaved() async {
-  // Placeholder for local storage / shared_preferences if needed
-}
+Future<void> loadSaved() async {}
 
 void rememberAddress(String name, String address, String pin) {
   profile.name = name.trim();
@@ -185,16 +183,296 @@ class RecentlyViewed extends StatelessWidget {
   }
 }
 
+// ---------- Login Popup ----------
+
+Future<void> openLoginPopup(BuildContext context) async {
+  final phoneCtrl = TextEditingController();
+  final emailCtrl = TextEditingController();
+  bool useEmail = false;
+
+  await showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setS) {
+        final canContinue = useEmail
+            ? emailCtrl.text.trim().contains('@')
+            : phoneCtrl.text.trim().length >= 10;
+
+        return Dialog(
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680, minHeight: 380),
+            child: Row(
+              children: [
+                Container(
+                  width: 230,
+                  color: blue,
+                  padding: const EdgeInsets.all(24),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Login',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        'Get access to your Orders, Wishlist and Recommendations',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 15,
+                          height: 1.4,
+                        ),
+                      ),
+                      Spacer(),
+                      Icon(
+                        Icons.shopping_bag_rounded,
+                        color: Colors.amber,
+                        size: 72,
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Log in for the best experience',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        if (!useEmail)
+                          TextField(
+                            controller: phoneCtrl,
+                            keyboardType: TextInputType.phone,
+                            onChanged: (_) => setS(() {}),
+                            decoration: const InputDecoration(
+                              prefixText: '+91  ',
+                              labelText: 'Enter Phone Number',
+                              border: OutlineInputBorder(),
+                            ),
+                          )
+                        else
+                          TextField(
+                            controller: emailCtrl,
+                            keyboardType: TextInputType.emailAddress,
+                            onChanged: (_) => setS(() {}),
+                            decoration: const InputDecoration(
+                              labelText: 'Enter Email ID',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () => setS(() => useEmail = !useEmail),
+                            child: Text(
+                              useEmail ? 'Use Phone Number' : 'Use Email-ID',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'By continuing, you agree to Style Shop Terms of Use and Privacy Policy.',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 46,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: canContinue
+                                  ? orange
+                                  : Colors.grey.shade300,
+                              foregroundColor: canContinue
+                                  ? Colors.white
+                                  : Colors.grey.shade700,
+                            ),
+                            onPressed: canContinue
+                                ? () {
+                                    final val = useEmail
+                                        ? emailCtrl.text.trim()
+                                        : '+91 ${phoneCtrl.text.trim()}';
+                                    rememberAddress(
+                                      profile.name.isEmpty ? val : profile.name,
+                                      profile.address,
+                                      profile.pin,
+                                    );
+                                    Navigator.pop(ctx);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Logged in as $val'),
+                                      ),
+                                    );
+                                  }
+                                : null,
+                            child: const Text('Continue'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+// ---------- Support Chat ----------
+
+class SupportChatPage extends StatefulWidget {
+  const SupportChatPage({super.key});
+
+  @override
+  State<SupportChatPage> createState() => _SupportChatPageState();
+}
+
+class _SupportChatPageState extends State<SupportChatPage> {
+  final TextEditingController msgCtrl = TextEditingController();
+  final List<(bool isUser, String text)> messages = [
+    (
+      false,
+      'Namaste! Style Shop Support mein aapka swagat hai. Order, payment ya return mein kya madad chahiye?',
+    ),
+  ];
+
+  void _send() {
+    final txt = msgCtrl.text.trim();
+    if (txt.isEmpty) return;
+    setState(() {
+      messages.add((true, txt));
+      messages.add((
+        false,
+        'Humne aapka message ("$txt") note kar liya hai. Hamari support team jald hi response degi.',
+      ));
+    });
+    msgCtrl.clear();
+  }
+
+  @override
+  void dispose() {
+    msgCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: blueBar('Support Chat'),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: messages.length,
+              itemBuilder: (context, i) {
+                final (isUser, text) = messages[i];
+                return Align(
+                  alignment:
+                      isUser ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    constraints: const BoxConstraints(maxWidth: 360),
+                    decoration: BoxDecoration(
+                      color: isUser ? blue : card(context),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      text,
+                      style: TextStyle(color: isUser ? Colors.white : null),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Container(
+            color: card(context),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: SafeArea(
+              top: false,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: msgCtrl,
+                      onSubmitted: (_) => _send(),
+                      decoration: const InputDecoration(
+                        hintText: 'Apna message likhein...',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    style: FilledButton.styleFrom(backgroundColor: blue),
+                    onPressed: _send,
+                    child: const Icon(Icons.send, size: 18),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void openSupportChat(BuildContext context) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => const SupportChatPage()),
+  );
+}
+
 // ---------- Info Pages (About us, Contact us, Return policy) ----------
 
 class InfoPage extends StatelessWidget {
   final String title;
   final List<(String, String)> sections;
+  final bool showChatButton;
 
   const InfoPage({
     super.key,
     required this.title,
     required this.sections,
+    this.showChatButton = false,
   });
 
   @override
@@ -235,6 +513,19 @@ class InfoPage extends StatelessWidget {
                 ],
               ),
             ),
+          if (showChatButton)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: blue,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                onPressed: () => openSupportChat(context),
+                icon: const Icon(Icons.chat_bubble_outline),
+                label: const Text('Start Support Chat'),
+              ),
+            ),
         ],
       ),
     );
@@ -268,6 +559,7 @@ void openContactUs(BuildContext context) {
     MaterialPageRoute(
       builder: (_) => const InfoPage(
         title: 'Contact Us',
+        showChatButton: true,
         sections: [
           (
             'Customer Support Email',
@@ -365,9 +657,21 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Delivery Details',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Delivery Details',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => openLoginPopup(context),
+                      child: const Text('LOGIN / SWITCH'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -431,6 +735,13 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             child: Column(
               children: [
+                ListTile(
+                  leading: const Icon(Icons.chat_bubble_outline),
+                  title: const Text('Support chat'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => openSupportChat(context),
+                ),
+                const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.info_outline),
                   title: const Text('About us'),
