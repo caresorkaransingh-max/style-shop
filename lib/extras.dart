@@ -12,7 +12,6 @@ const String kSupabaseKey = 'sb_publishable_vUttKc25oC5lTNxS8ikaAQ_3gNH3V7g';
 
 Map<String, String> get _sbHeaders => {
       'apikey': kSupabaseKey,
-      'Authorization': 'Bearer $kSupabaseKey',
       'Content-Type': 'application/json',
       'Prefer': 'resolution=merge-duplicates,return=minimal',
     };
