@@ -863,12 +863,10 @@ class ShopApp extends StatelessWidget {
         builder: (context, child) => ColoredBox(
           color: const Color(0xFFDDDDDD),
           child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: child,
-            ),
+            child: FrameWidth(child: child),
           ),
         ),
+        navigatorObservers: [WidthObserver()],
         home: const RootPage(),
       ),
     );
@@ -1598,8 +1596,8 @@ class _HomeTabState extends State<HomeTab> {
                     physics: const NeverScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
                     gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 230,
                           crossAxisSpacing: 8,
                           mainAxisSpacing: 8,
                           childAspectRatio: 0.56,
@@ -1638,8 +1636,8 @@ class WishlistPage extends StatelessWidget {
           }
           return GridView.builder(
             padding: const EdgeInsets.all(8),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 230,
               crossAxisSpacing: 8,
               mainAxisSpacing: 8,
               childAspectRatio: 0.56,
@@ -2472,6 +2470,46 @@ class SuccessPage extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+// ---------- Desktop / window support ----------
+
+final ValueNotifier<double> frameWidth = ValueNotifier<double>(1200);
+
+class WidthObserver extends NavigatorObserver {
+  void _set(Route<dynamic>? r) {
+    final w = (r == null || r.isFirst) ? 1200.0 : 720.0;
+    WidgetsBinding.instance.addPostFrameCallback((_) => frameWidth.value = w);
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => _set(route);
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => _set(previousRoute);
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) => _set(newRoute);
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) => _set(previousRoute);
+}
+
+class FrameWidth extends StatelessWidget {
+  final Widget? child;
+  const FrameWidth({super.key, this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: frameWidth,
+      builder: (context, w, _) => TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: w, end: w),
+        duration: const Duration(milliseconds: 250),
+        builder: (context, v, c) => ConstrainedBox(constraints: BoxConstraints(maxWidth: v), child: c),
+        child: child,
       ),
     );
   }
