@@ -215,7 +215,10 @@ void openWhatsAppSupport(BuildContext context, {String? customText}) {
 // Downloadable / Printable Order Invoice
 void downloadOrderInvoice(BuildContext context, Order o) {
   final itemsRows = o.items
-      .map((item) => '<tr><td style="padding:8px;border-bottom:1px solid #eee;">$item</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">Included</td></tr>')
+      .map(
+        (item) =>
+            '<tr><td style="padding:8px;border-bottom:1px solid #eee;">$item</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">Included</td></tr>',
+      )
       .join();
   final customerName = profile.name.isNotEmpty
       ? profile.name
@@ -571,7 +574,7 @@ class RecentlyViewed extends StatelessWidget {
   }
 }
 
-// Admin Panel (Add Products + Manage Orders)
+// Admin Panel (Add Products with Color Variants & Images + Manage Orders)
 class AdminPanelPage extends StatefulWidget {
   const AdminPanelPage({super.key});
 
@@ -585,8 +588,36 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
   final priceCtrl = TextEditingController(text: '1499');
   final mrpCtrl = TextEditingController(text: '2499');
   final stockCtrl = TextEditingController(text: '10');
+
+  // Variant 1 (Main)
+  final c1NameCtrl = TextEditingController(text: 'Black');
+  final c1ImgCtrl = TextEditingController(text: px(1072036));
+  Color c1Color = const Color(0xFF222222);
+
+  // Variant 2
+  final c2NameCtrl = TextEditingController(text: 'Brown');
+  final c2ImgCtrl = TextEditingController(text: px(15133974));
+  Color c2Color = const Color(0xFF8B5E3C);
+
+  // Variant 3
+  final c3NameCtrl = TextEditingController(text: 'Blue');
+  final c3ImgCtrl = TextEditingController(text: px(991509));
+  Color c3Color = const Color(0xFF378ADD);
+
   String selectedGroup = 'Men';
   String selectedTag = 'T-Shirt';
+
+  static const List<(String, Color)> _colorPresets = [
+    ('Black', Color(0xFF222222)),
+    ('White', Color(0xFFF5F5F5)),
+    ('Brown', Color(0xFF8B5E3C)),
+    ('Blue', Color(0xFF378ADD)),
+    ('Navy', Color(0xFF1E3A8A)),
+    ('Red', Color(0xFFA32D2D)),
+    ('Pink', Color(0xFFD4537E)),
+    ('Green', Color(0xFF1D9E75)),
+    ('Yellow', Color(0xFFEAB308)),
+  ];
 
   @override
   void dispose() {
@@ -595,7 +626,135 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     priceCtrl.dispose();
     mrpCtrl.dispose();
     stockCtrl.dispose();
+    c1NameCtrl.dispose();
+    c1ImgCtrl.dispose();
+    c2NameCtrl.dispose();
+    c2ImgCtrl.dispose();
+    c3NameCtrl.dispose();
+    c3ImgCtrl.dispose();
     super.dispose();
+  }
+
+  List<ProductVariant> _buildVariants() {
+    final list = <ProductVariant>[];
+    final entries = [
+      (c1NameCtrl.text.trim(), c1ImgCtrl.text.trim(), c1Color),
+      (c2NameCtrl.text.trim(), c2ImgCtrl.text.trim(), c2Color),
+      (c3NameCtrl.text.trim(), c3ImgCtrl.text.trim(), c3Color),
+    ];
+
+    for (final (cName, imgUrl, swatch) in entries) {
+      if (cName.isNotEmpty || imgUrl.isNotEmpty) {
+        list.add(
+          ProductVariant(
+            cName.isEmpty ? 'Color ${list.length + 1}' : cName,
+            swatch,
+            [imgUrl.isEmpty ? px(15133974) : imgUrl],
+          ),
+        );
+      }
+    }
+
+    if (list.isEmpty) {
+      list.add(ProductVariant('Default', c1Color, [px(15133974)]));
+    }
+    return list;
+  }
+
+  Widget _variantInputCard({
+    required String title,
+    required TextEditingController colorCtrl,
+    required TextEditingController imgCtrl,
+    required Color currentSwatch,
+    required ValueChanged<Color> onSwatchChange,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(radius: 10, backgroundColor: currentSwatch),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: colorCtrl,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Color Name (e.g. Red)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: imgCtrl,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Image URL (https://...)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final preset in _colorPresets)
+                GestureDetector(
+                  onTap: () {
+                    colorCtrl.text = preset.$1;
+                    onSwatchChange(preset.$2);
+                    setState(() {});
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: currentSwatch == preset.$2
+                            ? blue
+                            : Colors.grey.shade300,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircleAvatar(radius: 6, backgroundColor: preset.$2),
+                        const SizedBox(width: 4),
+                        Text(preset.$1, style: const TextStyle(fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   void _addProduct() {
@@ -612,7 +771,12 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       return;
     }
 
-    final nextId = (products.map((e) => e.id).fold(0, (a, b) => a > b ? a : b)) + 1;
+    final builtVariants = _buildVariants();
+    final primaryImg = builtVariants.first.images.first;
+    final primaryColor = builtVariants.first.swatch;
+    final nextId =
+        (products.map((e) => e.id).fold(0, (a, b) => a > b ? a : b)) + 1;
+
     products.insert(
       0,
       Product(
@@ -626,15 +790,20 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
         4.5,
         120,
         Icons.shopping_bag,
-        blue,
-        px(15133974),
+        primaryColor,
+        primaryImg,
         stock: stock,
+        variants: builtVariants,
       ),
     );
     nameCtrl.clear();
     setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('"$name" store mein add ho gaya!')),
+      SnackBar(
+        content: Text(
+          '"$name" (${builtVariants.length} color variants) store mein add ho gaya!',
+        ),
+      ),
     );
   }
 
@@ -758,7 +927,39 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
+                const Text(
+                  'Color Variants & Images',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Har color ke liye alag image URL daalein (kisi color ki zaroorat na ho to uska naam/URL khali chhod sakte hain).',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
+                _variantInputCard(
+                  title: 'Color Variant 1 (Main)',
+                  colorCtrl: c1NameCtrl,
+                  imgCtrl: c1ImgCtrl,
+                  currentSwatch: c1Color,
+                  onSwatchChange: (col) => c1Color = col,
+                ),
+                _variantInputCard(
+                  title: 'Color Variant 2',
+                  colorCtrl: c2NameCtrl,
+                  imgCtrl: c2ImgCtrl,
+                  currentSwatch: c2Color,
+                  onSwatchChange: (col) => c2Color = col,
+                ),
+                _variantInputCard(
+                  title: 'Color Variant 3',
+                  colorCtrl: c3NameCtrl,
+                  imgCtrl: c3ImgCtrl,
+                  currentSwatch: c3Color,
+                  onSwatchChange: (col) => c3Color = col,
+                ),
+                const SizedBox(height: 6),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
