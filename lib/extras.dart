@@ -128,7 +128,7 @@ Future<String?> syncCatalogToSupabase() async {
         .map((p) => {'id': p.id, 'data': p.toJson()})
         .toList();
     final res = await http.post(
-      Uri.parse('$kSupabaseUrl/rest/v1/store_products'),
+      Uri.parse('$kSupabaseUrl/rest/v1/store_products?on_conflict=id'),
       headers: _sbHeaders,
       body: jsonEncode(rows),
     );
@@ -157,7 +157,7 @@ Future<String?> syncOrdersToSupabase() async {
         .map((o) => {'id': o.id, 'data': o.toJson()})
         .toList();
     final res = await http.post(
-      Uri.parse('$kSupabaseUrl/rest/v1/store_orders'),
+      Uri.parse('$kSupabaseUrl/rest/v1/store_orders?on_conflict=id'),
       headers: _sbHeaders,
       body: jsonEncode(rows),
     );

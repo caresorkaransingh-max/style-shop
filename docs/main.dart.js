@@ -29466,7 +29466,7 @@ s=1
 break}j=A.U(k).i("a1<1,au<l,K>>")
 i=A.W(new A.a1(k,new A.aIC(),j),j.i("ag.E"))
 n=i
-k=A.eJ("https://fforcyaoyscgjdbtqpvp.supabase.co/rest/v1/store_products")
+k=A.eJ("https://fforcyaoyscgjdbtqpvp.supabase.co/rest/v1/store_products?on_conflict=id")
 j=t.N
 j=A.al(["apikey",u.j,"Content-Type","application/json","Prefer",u.N],j,j)
 s=7
@@ -29525,7 +29525,7 @@ s=1
 break}j=A.U(k).i("a1<1,au<l,K>>")
 i=A.W(new A.a1(k,new A.aID(),j),j.i("ag.E"))
 n=i
-k=A.eJ("https://fforcyaoyscgjdbtqpvp.supabase.co/rest/v1/store_orders")
+k=A.eJ("https://fforcyaoyscgjdbtqpvp.supabase.co/rest/v1/store_orders?on_conflict=id")
 j=t.N
 j=A.al(["apikey",u.j,"Content-Type","application/json","Prefer",u.N],j,j)
 s=7
