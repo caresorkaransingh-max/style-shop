@@ -204,35 +204,15 @@ bool isVideoMediaUrl(String url) {
 }
 
 // Web Video Preview Widget for Detail Page
-class WebVideoPlayer extends StatefulWidget {
+class WebVideoPlayer extends StatelessWidget {
   final String url;
   final double height;
   const WebVideoPlayer({super.key, required this.url, this.height = 320});
 
   @override
-  State<WebVideoPlayer> createState() => _WebVideoPlayerState();
-}
-
-class _WebVideoPlayerState extends State<WebVideoPlayer> {
-  late final String _viewType;
-
-  @override
-  void initState() {
-    super.initState();
-    _viewType = 'ss-video-${widget.url.hashCode}-${DateTime.now().microsecondsSinceEpoch}';
-    // ignore: undefined_prefixed_name
-    html.document.registerElement;
-    try {
-      // ignore: avoid_dynamic_calls
-      final uiWeb = (html.window as dynamic);
-      final _ = uiWeb;
-    } catch (_) {}
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Container(
-      height: widget.height,
+      height: height,
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.black87,
@@ -254,7 +234,7 @@ class _WebVideoPlayerState extends State<WebVideoPlayer> {
           ),
           const SizedBox(height: 6),
           Text(
-            widget.url,
+            url,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: Colors.white70, fontSize: 12),
@@ -264,7 +244,7 @@ class _WebVideoPlayerState extends State<WebVideoPlayer> {
             style: FilledButton.styleFrom(backgroundColor: blue),
             onPressed: () {
               try {
-                html.window.open(widget.url, '_blank');
+                html.window.open(url, '_blank');
               } catch (_) {}
             },
             icon: const Icon(Icons.open_in_new, size: 18),
