@@ -97619,7 +97619,7 @@ A.akK.prototype={
 $1(a){return a.gnG()},
 $S:237}
 A.RU.prototype={
-zx(a){var s=a==null||a.gnG()?1200:720
+zx(a){var s=a==null||a.gnG()?1600:720
 $.X.ok$.push(new A.amO(s))},
 Zy(a,b){return this.zx(a)},
 Zx(a,b){return this.zx(b)},
@@ -106118,7 +106118,7 @@ s($,"b74","y4",()=>{var q="Jacket",p="Women",o="Urban Wear",n="Men",m=4280131189
 return A.b([A.ih(1,"Light Brown Jacket","Style Co",q,p,3499,5999,4.5,2341,B.mj,A.aN(4287323708),A.e1(15133974)),A.ih(2,"Checked Blazer",o,q,n,4999,8999,4.7,1876,B.mj,A.aN(4290077981),A.e1(756484)),A.ih(3,"Floral Dress","Bloom","Dress",p,2799,4999,4.4,3120,B.qr,A.aN(4292105086),A.e1(4380970)),A.ih(4,"Cotton T-Shirt","Basics","T-Shirt",n,799,1499,4.2,8932,B.qh,A.aN(m),A.e1(2379005)),A.ih(5,"Slim Fit Pant",o,"Pant",n,1899,3299,4.3,2210,B.J3,A.aN(4281830109),A.e1(991509)),A.ih(6,"Summer Dress","Bloom","Dress",p,2299,3999,4.6,1543,B.qr,A.aN(l),A.e1(15133972)),A.ih(7,"Denim Jacket","Blue Denim",q,n,3299,5499,4.5,2987,B.mj,A.aN(4283648695),A.e1(1072036)),A.ih(8,"Basic Tee","Basics","T-Shirt",n,699,1299,4.1,6410,B.qh,A.aN(4288884013),A.e1(997489)),A.ih(9,"Smartphone X","TechOne","Mobile","Mobiles",14999,19999,4.4,5210,B.IY,A.aN(4282145419),A.e1(404280)),A.ih(10,"Wireless Headphones","SoundMax","Headphone",k,1999,3999,4.3,4120,B.IF,A.aN(4285217931),A.e1(3394650)),A.ih(11,"Laptop Pro 14","TechOne","Laptop",k,45999,59999,4.6,1290,B.IJ,A.aN(4282664004),A.e1(18105)),A.ih(12,"Study Lamp",j,"Lamp","Home",899,1599,4.2,980,B.IL,A.aN(l),A.e1(1112598)),A.ih(13,"Cushion Set",j,"Decor","Home",1299,2199,4.4,760,B.IC,A.aN(m),A.e1(1866149))],t._V)})
 s($,"b7a","cz",()=>{var q=t.S
 return new A.Dw(A.b([],A.as("B<hT>")),A.av(q),A.b([],A.as("B<qx>")),A.n(q,A.as("S<lI>")),$.al())})
-s($,"b6M","aFO",()=>A.RG(1200))
+s($,"b6M","aFO",()=>A.RG(1600))
 s($,"b3C","aO0",()=>new A.G())
 s($,"b6C","aFM",()=>new A.a3B($.aFs(),null))
 s($,"b4a","aOe",()=>new A.af3(A.cD("/",!0,!1),A.cD("[^/]$",!0,!1),A.cD("^/",!0,!1)))

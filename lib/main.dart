@@ -2476,11 +2476,11 @@ class SuccessPage extends StatelessWidget {
 }
 // ---------- Desktop / window support ----------
 
-final ValueNotifier<double> frameWidth = ValueNotifier<double>(1200);
+final ValueNotifier<double> frameWidth = ValueNotifier<double>(1600);
 
 class WidthObserver extends NavigatorObserver {
   void _set(Route<dynamic>? r) {
-    final w = (r == null || r.isFirst) ? 1200.0 : 720.0;
+    final w = (r == null || r.isFirst) ? 1600.0 : 720.0;
     WidgetsBinding.instance.addPostFrameCallback((_) => frameWidth.value = w);
   }
 
