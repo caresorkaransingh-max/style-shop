@@ -540,6 +540,11 @@ class Store extends ChangeNotifier {
     notifyListeners();
     return id;
   }
+
+  void removeOrder(String orderId) {
+    orders.removeWhere((o) => o.id == orderId);
+    notifyListeners();
+  }
 }
 
 final Store store = Store();
@@ -1757,7 +1762,7 @@ class OrdersPage extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(8),
             children: [
-              for (final o in store.orders)
+              for (final o in List<Order>.from(store.orders))
                 Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(14),
@@ -1767,17 +1772,49 @@ class OrdersPage extends StatelessWidget {
                     children: [
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             o.id,
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          Text(
-                            trackSteps[o.step],
-                            style: const TextStyle(
-                              color: green,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                trackSteps[o.step],
+                                style: const TextStyle(
+                                  color: green,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              TextButton.icon(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(0, 28),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () {
+                                  store.removeOrder(o.id);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Order ${o.id} removed'),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  size: 16,
+                                ),
+                                label: const Text(
+                                  'Remove',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -1886,7 +1923,7 @@ class _TrackPageState extends State<TrackPage> {
   }
 }
 
-// ---------- SINGLE PRODUCT PAGE (MODERN CLEAN LAYOUT + COLOR/SIZE VARIANT SWITCHING) ----------
+// ---------- SINGLE PRODUCT PAGE ----------
 
 class DetailPage extends StatefulWidget {
   final Product product;
@@ -1901,7 +1938,6 @@ class _DetailPageState extends State<DetailPage> {
   int selectedVariantIndex = 0;
   int selectedImageIndex = 0;
 
-  // Size ke hisaab se price difference (e.g., XL/XXL thoda zyada)
   int get currentPrice {
     final base = widget.product.price;
     if (!widget.product.isCloth) return base;
@@ -1936,7 +1972,6 @@ class _DetailPageState extends State<DetailPage> {
     final onSurface = Theme.of(context).colorScheme.onSurface;
     final isWide = MediaQuery.of(context).size.width > 760;
 
-    // Image Gallery + Thumbnails Widget
     final galleryWidget = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1996,7 +2031,6 @@ class _DetailPageState extends State<DetailPage> {
       ),
     );
 
-    // Product Info, Color & Size Selectors
     final infoWidget = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2046,8 +2080,6 @@ class _DetailPageState extends State<DetailPage> {
             ],
           ),
         ),
-
-        // COLOR SELECTOR (Color badalne par image aur title update hoga)
         section([
           Row(
             children: [
@@ -2118,8 +2150,6 @@ class _DetailPageState extends State<DetailPage> {
             ],
           ),
         ]),
-
-        // SIZE SELECTOR (Size badalne par price aur variant update hoga)
         if (p.isCloth)
           section([
             Row(
@@ -2157,7 +2187,6 @@ class _DetailPageState extends State<DetailPage> {
               ],
             ),
           ]),
-
         section([
           const Row(
             children: [
@@ -2179,7 +2208,6 @@ class _DetailPageState extends State<DetailPage> {
             ],
           ),
         ]),
-
         section([
           const Text(
             'Available offers',
@@ -2203,7 +2231,6 @@ class _DetailPageState extends State<DetailPage> {
               ),
             ),
         ]),
-
         section([
           const Text(
             'Product details',
@@ -2215,7 +2242,6 @@ class _DetailPageState extends State<DetailPage> {
             style: const TextStyle(color: Colors.grey),
           ),
         ]),
-
         ListenableBuilder(
           listenable: store,
           builder: (context, _) => section([
@@ -2580,6 +2606,7 @@ class CheckoutPage extends StatefulWidget {
 
 class _CheckoutPageState extends State<CheckoutPage> {
   String pay = 'UPI';
+  bool _processingPay = false;
   final name = TextEditingController(text: profile.name);
   final addr = TextEditingController(text: profile.address);
   final pin = TextEditingController(text: profile.pin);
@@ -2590,6 +2617,121 @@ class _CheckoutPageState extends State<CheckoutPage> {
     addr.dispose();
     pin.dispose();
     super.dispose();
+  }
+
+  Future<void> _handlePay() async {
+    if (store.lines.isEmpty || _processingPay) return;
+
+    if (name.text.trim().isEmpty ||
+        addr.text.trim().isEmpty ||
+        pin.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill name, address and pincode')),
+      );
+      return;
+    }
+
+    if (pay == 'UPI' || pay == 'Credit / Debit card') {
+      final paid = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          final ctrl = TextEditingController();
+          return AlertDialog(
+            title: Text('$pay Payment'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Amount to pay: ₹${store.total}'),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: ctrl,
+                  decoration: InputDecoration(
+                    labelText: pay == 'UPI'
+                        ? 'Enter UPI ID (e.g. name@upi)'
+                        : 'Enter last 4 digits of card',
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Payment complete hone ke baad hi order place hoga.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('CANCEL PAYMENT'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: green),
+                onPressed: () {
+                  if (ctrl.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please enter details to pay'),
+                      ),
+                    );
+                    return;
+                  }
+                  Navigator.pop(ctx, true);
+                },
+                child: const Text('COMPLETE PAYMENT'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (paid != true) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Payment not completed. Order not placed.'),
+          ),
+        );
+        return;
+      }
+    } else {
+      final confirmCod = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Confirm Cash on Delivery'),
+          content: Text(
+            'Delivery ke waqt ₹${store.total} cash dena hoga. Order confirm karein?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('NO'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: orange),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('CONFIRM ORDER'),
+            ),
+          ],
+        ),
+      );
+      if (confirmCod != true) return;
+    }
+
+    setState(() => _processingPay = true);
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+
+    rememberAddress(name.text, addr.text, pin.text);
+    final id = store.placeOrder();
+    setState(() => _processingPay = false);
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => SuccessPage(orderId: id, pay: pay)),
+      (r) => r.isFirst,
+    );
   }
 
   Widget box(List<Widget> children) => Container(
@@ -2708,21 +2850,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   foregroundColor: Colors.white,
                   shape: const RoundedRectangleBorder(),
                 ),
-                onPressed: store.lines.isEmpty
+                onPressed: store.lines.isEmpty || _processingPay
                     ? null
-                    : () {
-                        rememberAddress(name.text, addr.text, pin.text);
-                        final id = store.placeOrder();
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => SuccessPage(orderId: id, pay: pay),
-                          ),
-                          (r) => r.isFirst,
-                        );
-                      },
+                    : _handlePay,
                 child: Text(
-                  'PAY ₹${store.total}',
+                  _processingPay ? 'PROCESSING...' : 'PAY ₹${store.total}',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
