@@ -21,12 +21,8 @@ const Color bg = Color(0xFFF1F3F6);
 String px(int id) =>
     'https://images.pexels.com/photos/$id/pexels-photo-$id.jpeg?auto=compress&cs=tinysrgb&w=600';
 
-// ---------- Theme helpers ----------
-
 final ValueNotifier<bool> darkMode = ValueNotifier<bool>(false);
 Color card(BuildContext c) => Theme.of(c).colorScheme.surface;
-
-// ---------- Live location ----------
 
 final ValueNotifier<String> deliverTo = ValueNotifier<String>(
   'Detecting location...',
@@ -71,8 +67,6 @@ Future<void> updateLocation() async {
     deliverTo.value = 'Tap to set location';
   }
 }
-
-// ---------- Data & Variants ----------
 
 class ProductVariant {
   final String colorName;
@@ -411,8 +405,6 @@ class NetImg extends StatelessWidget {
   }
 }
 
-// ---------- Store (cart, wishlist, orders, reviews, coupon) ----------
-
 class CartLine {
   final Product p;
   final String size;
@@ -687,8 +679,6 @@ class Store extends ChangeNotifier {
 
 final Store store = Store();
 
-// ---------- GLOBAL LOGO & HEADER BAR ----------
-
 class BrandLogo extends StatelessWidget {
   const BrandLogo({super.key});
 
@@ -766,8 +756,6 @@ PreferredSizeWidget blueBar(String title, {List<Widget>? actions}) => AppBar(
     const SizedBox(width: 4),
   ],
 );
-
-// ---------- Shared Widgets ----------
 
 class RatingChip extends StatelessWidget {
   final double rating;
@@ -964,8 +952,6 @@ class ProductCard extends StatelessWidget {
   }
 }
 
-// ---------- Coupon box ----------
-
 class CouponBox extends StatefulWidget {
   const CouponBox({super.key});
 
@@ -1049,8 +1035,6 @@ class _CouponBoxState extends State<CouponBox> {
   }
 }
 
-// ---------- Write review dialog ----------
-
 void writeReview(BuildContext context, Product p) {
   int stars = 5;
   final c = TextEditingController();
@@ -1101,8 +1085,6 @@ void writeReview(BuildContext context, Product p) {
     ),
   );
 }
-
-// ---------- App ----------
 
 class ShopApp extends StatelessWidget {
   const ShopApp({super.key});
@@ -1222,8 +1204,6 @@ class _RootPageState extends State<RootPage> {
     );
   }
 }
-
-// ---------- Home ----------
 
 const banners = [
   (
@@ -1526,7 +1506,7 @@ class _HomeTabState extends State<HomeTab> {
                           behavior: HitTestBehavior.opaque,
                           onTap: () {
                             darkMode.value = !darkMode.value;
-                            _writeStorage(_kDarkKey, darkMode.value.toString());
+                            saveDarkMode(darkMode.value);
                           },
                           child: Padding(
                             padding: const EdgeInsets.all(4),
@@ -1867,8 +1847,6 @@ class _HomeTabState extends State<HomeTab> {
   }
 }
 
-// ---------- Wishlist & Orders ----------
-
 class WishlistPage extends StatelessWidget {
   const WishlistPage({super.key});
 
@@ -2056,8 +2034,6 @@ class OrdersPage extends StatelessWidget {
   }
 }
 
-// ---------- Order tracking ----------
-
 class TrackPage extends StatefulWidget {
   final Order order;
   const TrackPage({super.key, required this.order});
@@ -2131,8 +2107,6 @@ class _TrackPageState extends State<TrackPage> {
     );
   }
 }
-
-// ---------- SINGLE PRODUCT PAGE ----------
 
 class DetailPage extends StatefulWidget {
   final Product product;
@@ -2629,8 +2603,6 @@ class _DetailPageState extends State<DetailPage> {
   }
 }
 
-// ---------- Cart ----------
-
 class CartPage extends StatelessWidget {
   const CartPage({super.key});
 
@@ -2839,307 +2811,6 @@ class CartPage extends StatelessWidget {
   }
 }
 
-// ---------- Checkout (with Address Book & Gateway Verification) ----------
-
-class CheckoutPage extends StatefulWidget {
-  const CheckoutPage({super.key});
-
-  @override
-  State<CheckoutPage> createState() => _CheckoutPageState();
-}
-
-class _CheckoutPageState extends State<CheckoutPage> {
-  String pay = 'UPI';
-  bool _processingPay = false;
-  late final TextEditingController name;
-  late final TextEditingController addr;
-  late final TextEditingController pin;
-
-  @override
-  void initState() {
-    super.initState();
-    name = TextEditingController(text: profile.name);
-    addr = TextEditingController(text: profile.address);
-    pin = TextEditingController(text: profile.pin);
-  }
-
-  @override
-  void dispose() {
-    name.dispose();
-    addr.dispose();
-    pin.dispose();
-    super.dispose();
-  }
-
-  Future<void> _handlePay() async {
-    if (store.lines.isEmpty || _processingPay) return;
-
-    if (name.text.trim().isEmpty ||
-        addr.text.trim().isEmpty ||
-        pin.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill name, address and pincode')),
-      );
-      return;
-    }
-
-    if (pay == 'UPI' || pay == 'Credit / Debit card') {
-      final paid = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) {
-          final ctrl = TextEditingController();
-          return AlertDialog(
-            title: Text('$pay — Gateway Checkout'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Amount to pay: ₹${store.total}'),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: ctrl,
-                  decoration: InputDecoration(
-                    labelText: pay == 'UPI'
-                        ? 'Enter UPI ID (e.g. name@upi)'
-                        : 'Enter last 4 digits of card',
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Payment complete hone ke baad hi order place hoga (Razorpay/Gateway ready).',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('CANCEL PAYMENT'),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: green),
-                onPressed: () {
-                  if (ctrl.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      const SnackBar(
-                        content: Text('Please enter details to pay'),
-                      ),
-                    );
-                    return;
-                  }
-                  Navigator.pop(ctx, true);
-                },
-                child: const Text('COMPLETE PAYMENT'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (paid != true) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment not completed. Order not placed.'),
-          ),
-        );
-        return;
-      }
-    } else {
-      final confirmCod = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Confirm Cash on Delivery'),
-          content: Text(
-            'Delivery ke waqt ₹${store.total} cash dena hoga. Order confirm karein?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('NO'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: orange),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('CONFIRM ORDER'),
-            ),
-          ],
-        ),
-      );
-      if (confirmCod != true) return;
-    }
-
-    setState(() => _processingPay = true);
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-
-    rememberAddress(name.text, addr.text, pin.text);
-    final id = store.placeOrder();
-    setState(() => _processingPay = false);
-
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => SuccessPage(orderId: id, pay: pay)),
-      (r) => r.isFirst,
-    );
-  }
-
-  Widget box(List<Widget> children) => Container(
-    width: double.infinity,
-    margin: const EdgeInsets.only(bottom: 8),
-    padding: const EdgeInsets.all(14),
-    color: card(context),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
-    ),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        final saved = store.mrpTotal - store.total;
-        return Scaffold(
-          appBar: blueBar('Checkout'),
-          body: ListView(
-            padding: const EdgeInsets.all(8),
-            children: [
-              box([
-                const Text(
-                  'DELIVERY ADDRESS',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (profile.addresses.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      for (final a in profile.addresses)
-                        ActionChip(
-                          avatar: const Icon(Icons.location_on, size: 16),
-                          label: Text('${a.label} (${a.pin})'),
-                          onPressed: () {
-                            name.text = a.name;
-                            addr.text = a.address;
-                            pin.text = a.pin;
-                          },
-                        ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 8),
-                TextField(
-                  controller: name,
-                  decoration: const InputDecoration(labelText: 'Full name'),
-                ),
-                TextField(
-                  controller: addr,
-                  decoration: const InputDecoration(labelText: 'Address'),
-                ),
-                TextField(
-                  controller: pin,
-                  decoration: const InputDecoration(labelText: 'Pincode'),
-                ),
-              ]),
-              box([
-                const Text(
-                  'PAYMENT METHOD',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                for (final m in [
-                  'UPI',
-                  'Credit / Debit card',
-                  'Cash on delivery',
-                ])
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      pay == m
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      color: pay == m ? blue : Colors.grey,
-                    ),
-                    title: Text(m),
-                    onTap: () => setState(() => pay = m),
-                  ),
-              ]),
-              const CouponBox(),
-              box([
-                const Text(
-                  'ORDER SUMMARY',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                priceRow('Price (${store.count} items)', '₹${store.mrpTotal}'),
-                priceRow(
-                  'Discount',
-                  '- ₹${store.mrpTotal - store.subTotal}',
-                  color: green,
-                ),
-                if (store.couponOff > 0)
-                  priceRow(
-                    'Coupon (${store.coupon})',
-                    '- ₹${store.couponOff}',
-                    color: green,
-                  ),
-                priceRow('Delivery charges', 'FREE', color: green),
-                const Divider(),
-                priceRow('Total payable', '₹${store.total}', bold: true),
-                if (store.lines.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      'You will save ₹$saved on this order',
-                      style: const TextStyle(
-                        color: green,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ]),
-            ],
-          ),
-          bottomNavigationBar: SafeArea(
-            child: SizedBox(
-              height: 56,
-              child: TextButton(
-                style: TextButton.styleFrom(
-                  backgroundColor: orange,
-                  foregroundColor: Colors.white,
-                  shape: const RoundedRectangleBorder(),
-                ),
-                onPressed: store.lines.isEmpty || _processingPay
-                    ? null
-                    : _handlePay,
-                child: Text(
-                  _processingPay ? 'PROCESSING...' : 'PAY ₹${store.total}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
 class SuccessPage extends StatelessWidget {
   final String orderId;
   final String pay;
@@ -3185,8 +2856,6 @@ class SuccessPage extends StatelessWidget {
     );
   }
 }
-
-// ---------- Desktop / window support ----------
 
 final ValueNotifier<double> frameWidth = ValueNotifier<double>(1600);
 
