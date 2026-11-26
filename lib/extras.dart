@@ -183,7 +183,7 @@ class RecentlyViewed extends StatelessWidget {
   }
 }
 
-// ---------- Login Popup ----------
+// ---------- Responsive Login Popup ----------
 
 Future<void> openLoginPopup(BuildContext context) async {
   final phoneCtrl = TextEditingController();
@@ -195,147 +195,196 @@ Future<void> openLoginPopup(BuildContext context) async {
     barrierDismissible: true,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setS) {
+        final isMobile = MediaQuery.of(ctx).size.width < 600;
         final canContinue = useEmail
             ? emailCtrl.text.trim().contains('@')
             : phoneCtrl.text.trim().length >= 10;
 
-        return Dialog(
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 680, minHeight: 380),
-            child: Row(
-              children: [
-                Container(
-                  width: 230,
-                  color: blue,
-                  padding: const EdgeInsets.all(24),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Login',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                        ),
+        final blueSide = Container(
+          width: isMobile ? double.infinity : 230,
+          color: blue,
+          padding: EdgeInsets.all(isMobile ? 18 : 24),
+          child: isMobile
+              ? const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Login',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
                       ),
-                      SizedBox(height: 12),
-                      Text(
-                        'Get access to your Orders, Wishlist and Recommendations',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 15,
-                          height: 1.4,
-                        ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Get access to your Orders, Wishlist and Recommendations',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ],
+                )
+              : const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Login',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
                       ),
-                      Spacer(),
-                      Icon(
-                        Icons.shopping_bag_rounded,
-                        color: Colors.amber,
-                        size: 72,
+                    ),
+                    SizedBox(height: 12),
+                    Text(
+                      'Get access to your Orders, Wishlist and Recommendations',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 15,
+                        height: 1.4,
                       ),
-                    ],
+                    ),
+                    Spacer(),
+                    Icon(
+                      Icons.shopping_bag_rounded,
+                      color: Colors.amber,
+                      size: 72,
+                    ),
+                  ],
+                ),
+        );
+
+        final formSide = Padding(
+          padding: EdgeInsets.all(isMobile ? 16 : 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Log in for the best experience',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (!useEmail)
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  onChanged: (_) => setS(() {}),
+                  decoration: const InputDecoration(
+                    prefixText: '+91  ',
+                    labelText: 'Enter Phone Number',
+                    border: OutlineInputBorder(),
+                  ),
+                )
+              else
+                TextField(
+                  controller: emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  onChanged: (_) => setS(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Enter Email ID',
+                    border: OutlineInputBorder(),
                   ),
                 ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Log in for the best experience',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        if (!useEmail)
-                          TextField(
-                            controller: phoneCtrl,
-                            keyboardType: TextInputType.phone,
-                            onChanged: (_) => setS(() {}),
-                            decoration: const InputDecoration(
-                              prefixText: '+91  ',
-                              labelText: 'Enter Phone Number',
-                              border: OutlineInputBorder(),
-                            ),
-                          )
-                        else
-                          TextField(
-                            controller: emailCtrl,
-                            keyboardType: TextInputType.emailAddress,
-                            onChanged: (_) => setS(() {}),
-                            decoration: const InputDecoration(
-                              labelText: 'Enter Email ID',
-                              border: OutlineInputBorder(),
-                            ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => setS(() => useEmail = !useEmail),
+                  child: Text(
+                    useEmail ? 'Use Phone Number' : 'Use Email-ID',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'By continuing, you agree to Style Shop Terms of Use and Privacy Policy.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: canContinue ? orange : Colors.grey.shade300,
+                    foregroundColor:
+                        canContinue ? Colors.white : Colors.grey.shade700,
+                  ),
+                  onPressed: canContinue
+                      ? () {
+                          final val = useEmail
+                              ? emailCtrl.text.trim()
+                              : '+91 ${phoneCtrl.text.trim()}';
+                          rememberAddress(
+                            profile.name.isEmpty ? val : profile.name,
+                            profile.address,
+                            profile.pin,
+                          );
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Logged in as $val')),
+                          );
+                        }
+                      : null,
+                  child: const Text('Continue'),
+                ),
+              ),
+            ],
+          ),
+        );
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Material(
+                  color: Theme.of(ctx).colorScheme.surface,
+                  clipBehavior: Clip.antiAlias,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: isMobile
+                      ? SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [blueSide, formSide],
                           ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () => setS(() => useEmail = !useEmail),
-                            child: Text(
-                              useEmail ? 'Use Phone Number' : 'Use Email-ID',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'By continuing, you agree to Style Shop Terms of Use and Privacy Policy.',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                        const SizedBox(height: 18),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 46,
-                          child: FilledButton(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: canContinue
-                                  ? orange
-                                  : Colors.grey.shade300,
-                              foregroundColor: canContinue
-                                  ? Colors.white
-                                  : Colors.grey.shade700,
-                            ),
-                            onPressed: canContinue
-                                ? () {
-                                    final val = useEmail
-                                        ? emailCtrl.text.trim()
-                                        : '+91 ${phoneCtrl.text.trim()}';
-                                    rememberAddress(
-                                      profile.name.isEmpty ? val : profile.name,
-                                      profile.address,
-                                      profile.pin,
-                                    );
-                                    Navigator.pop(ctx);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Logged in as $val'),
-                                      ),
-                                    );
-                                  }
-                                : null,
-                            child: const Text('Continue'),
+                        )
+                      : IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              blueSide,
+                              Expanded(child: formSide),
+                            ],
                           ),
                         ),
-                      ],
+                ),
+                Positioned(
+                  top: -14,
+                  right: -14,
+                  child: Material(
+                    color: Colors.white,
+                    shape: const CircleBorder(),
+                    elevation: 4,
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => Navigator.pop(ctx),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(
+                          Icons.close,
+                          size: 20,
+                          color: Colors.black87,
+                        ),
+                      ),
                     ),
                   ),
                 ),
