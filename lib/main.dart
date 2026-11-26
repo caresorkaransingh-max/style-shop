@@ -861,7 +861,7 @@ class ShopApp extends StatelessWidget {
           scaffoldBackgroundColor: const Color(0xFF121212),
         ),
         builder: (context, child) => ColoredBox(
-          color: const Color(0xFFDDDDDD),
+          color: Theme.of(context).scaffoldBackgroundColor,
           child: Center(
             child: FrameWidth(child: child),
           ),
