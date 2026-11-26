@@ -1,201 +1,60 @@
 import 'dart:async';
-import 'dart:convert';
-
-import 'package:material_ui/material_ui.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:flutter/material.dart';
 import 'main.dart';
 
-// ---------- Saved data (phone / browser mein) ----------
+// ---------- Saved Profile & Helpers ----------
 
-class Profile {
-  String name = '';
-  String phone = '';
-  String address = '';
-  String pin = '';
+class UserProfile {
+  String name;
+  String address;
+  String pin;
+
+  UserProfile({
+    this.name = '',
+    this.address = '',
+    this.pin = '',
+  });
 }
 
-final Profile profile = Profile();
-final ValueNotifier<List<int>> recent = ValueNotifier<List<int>>([]);
-final ValueNotifier<String> pickedColor = ValueNotifier<String>('Black');
-
-SharedPreferences? _prefs;
-bool _loading = true;
-
-Product? _byId(int id) {
-  for (final p in products) {
-    if (p.id == id) return p;
-  }
-  return null;
-}
+final UserProfile profile = UserProfile();
+final List<Product> recentlyViewed = [];
 
 Future<void> loadSaved() async {
-  try {
-    final p = await SharedPreferences.getInstance();
-    _prefs = p;
-    darkMode.value = p.getBool('dark') ?? false;
-    profile.name = p.getString('p_name') ?? '';
-    profile.phone = p.getString('p_phone') ?? '';
-    profile.address = p.getString('p_addr') ?? '';
-    profile.pin = p.getString('p_pin') ?? '';
-    for (final w in p.getStringList('wish') ?? <String>[]) {
-      store.wish.add(int.parse(w));
-    }
-    for (final c in jsonDecode(p.getString('cart') ?? '[]') as List) {
-      final m = c as Map;
-      final pr = _byId(m['id'] as int);
-      if (pr != null) {
-        store.lines.add(CartLine(pr, m['size'] as String, m['qty'] as int));
-      }
-    }
-    for (final o in jsonDecode(p.getString('orders') ?? '[]') as List) {
-      final m = o as Map;
-      final order = Order(
-        m['id'] as String,
-        List<String>.from(m['items'] as List),
-        m['total'] as int,
-      );
-      order.time = DateTime.fromMillisecondsSinceEpoch(m['t'] as int);
-      store.orders.add(order);
-    }
-    recent.value = (p.getStringList('recent') ?? <String>[])
-        .map((e) => int.parse(e))
-        .toList();
-  } catch (e) {
-    // saved data kharab ho to naye se shuru
+  // Placeholder for local storage / shared_preferences if needed
+}
+
+void rememberAddress(String name, String address, String pin) {
+  profile.name = name.trim();
+  profile.address = address.trim();
+  profile.pin = pin.trim();
+}
+
+void addRecent(Product p) {
+  recentlyViewed.removeWhere((item) => item.id == p.id);
+  recentlyViewed.insert(0, p);
+  if (recentlyViewed.length > 8) {
+    recentlyViewed.removeLast();
   }
-  _loading = false;
-  store.addListener(saveAll);
-  darkMode.addListener(saveAll);
-  recent.addListener(saveAll);
-}
-
-void saveAll() {
-  final p = _prefs;
-  if (p == null || _loading) return;
-  p.setBool('dark', darkMode.value);
-  p.setString('p_name', profile.name);
-  p.setString('p_phone', profile.phone);
-  p.setString('p_addr', profile.address);
-  p.setString('p_pin', profile.pin);
-  p.setStringList('wish', store.wish.map((e) => '$e').toList());
-  p.setString(
-    'cart',
-    jsonEncode(store.lines
-        .map((l) => {'id': l.p.id, 'size': l.size, 'qty': l.qty})
-        .toList()),
-  );
-  p.setString(
-    'orders',
-    jsonEncode(store.orders
-        .map((o) => {
-              'id': o.id,
-              'items': o.items,
-              'total': o.total,
-              't': o.time.millisecondsSinceEpoch,
-            })
-        .toList()),
-  );
-  p.setStringList('recent', recent.value.map((e) => '$e').toList());
-}
-
-void rememberAddress(String n, String a, String p) {
-  if (n.trim().isNotEmpty) profile.name = n.trim();
-  if (a.trim().isNotEmpty) profile.address = a.trim();
-  if (p.trim().isNotEmpty) profile.pin = p.trim();
-  saveAll();
 }
 
 // ---------- Coupons ----------
 
-int couponValue(String? code, int sub) {
-  if (code == 'SAVE10') return (sub * 0.10).round();
-  if (code == 'FLAT200') return sub >= 1000 ? 200 : 0;
-  if (code == 'WELCOME') {
-    final v = (sub * 0.15).round();
-    return v > 300 ? 300 : v;
-  }
+bool couponOk(String? code) {
+  if (code == null) return false;
+  final c = code.trim().toUpperCase();
+  return c == 'SAVE10' || c == 'FLAT200' || c == 'WELCOME';
+}
+
+int couponValue(String? code, int subTotal) {
+  if (code == null || subTotal <= 0) return 0;
+  final c = code.trim().toUpperCase();
+  if (c == 'SAVE10') return (subTotal * 0.10).round();
+  if (c == 'FLAT200') return subTotal >= 200 ? 200 : subTotal;
+  if (c == 'WELCOME') return (subTotal * 0.15).round().clamp(0, 500);
   return 0;
 }
 
-bool couponOk(String c) =>
-    const ['SAVE10', 'FLAT200', 'WELCOME'].contains(c.trim().toUpperCase());
-
-// ---------- Recently viewed ----------
-
-void addRecent(Product p) {
-  pickedColor.value = 'Black';
-  final l = List<int>.from(recent.value);
-  l.remove(p.id);
-  l.insert(0, p.id);
-  recent.value = l.take(8).toList();
-}
-
-class RecentlyViewed extends StatelessWidget {
-  const RecentlyViewed({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<int>>(
-      valueListenable: recent,
-      builder: (context, ids, _) {
-        final items = <Product>[];
-        for (final id in ids) {
-          final p = _byId(id);
-          if (p != null) items.add(p);
-        }
-        if (items.isEmpty) return const SizedBox.shrink();
-        return Container(
-          color: card(context),
-          margin: const EdgeInsets.only(top: 8),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12),
-                child: Text('Recently viewed', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 150,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  children: [
-                    for (final p in items)
-                      GestureDetector(
-                        onTap: () => openProduct(context, p),
-                        child: Container(
-                          width: 90,
-                          margin: const EdgeInsets.only(right: 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: SizedBox(width: double.infinity, child: NetImg(p)),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ---------- Sale countdown ----------
+// ---------- Sale Timer & Recently Viewed ----------
 
 class SaleTimer extends StatefulWidget {
   const SaleTimer({super.key});
@@ -205,13 +64,19 @@ class SaleTimer extends StatefulWidget {
 }
 
 class _SaleTimerState extends State<SaleTimer> {
+  Duration left = const Duration(hours: 3, minutes: 45, seconds: 30);
   Timer? t;
 
   @override
   void initState() {
     super.initState();
     t = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {
+        if (left.inSeconds > 0) {
+          left -= const Duration(seconds: 1);
+        }
+      });
     });
   }
 
@@ -221,19 +86,26 @@ class _SaleTimerState extends State<SaleTimer> {
     super.dispose();
   }
 
+  String _two(int n) => n.toString().padLeft(2, '0');
+
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final d = DateTime(now.year, now.month, now.day + 1).difference(now);
-    String two(int n) => n.toString().padLeft(2, '0');
+    final h = _two(left.inHours);
+    final m = _two(left.inMinutes.remainder(60));
+    final s = _two(left.inSeconds.remainder(60));
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
         children: [
-          const Icon(Icons.timer_outlined, size: 16, color: Colors.red),
+          const Icon(Icons.bolt, color: orange, size: 18),
+          const SizedBox(width: 4),
           Text(
-            '  Deal ends in ${two(d.inHours)}:${two(d.inMinutes % 60)}:${two(d.inSeconds % 60)}',
-            style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+            'Ends in $h:$m:$s',
+            style: const TextStyle(
+              color: orange,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
           ),
         ],
       ),
@@ -241,136 +113,206 @@ class _SaleTimerState extends State<SaleTimer> {
   }
 }
 
-// ---------- Product page: stock, colour, similar products ----------
-
-const colorOptions = <String, Color>{
-  'Black': Color(0xFF222222),
-  'Blue': Color(0xFF2874F0),
-  'Brown': Color(0xFF8B5E3C),
-  'Green': Color(0xFF388E3C),
-  'Red': Color(0xFFD32F2F),
-};
-
-class ProductExtras extends StatelessWidget {
-  final Product p;
-  const ProductExtras(this.p, {super.key});
+class RecentlyViewed extends StatelessWidget {
+  const RecentlyViewed({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Demo stock: asli app mein ye database se aayega
-    var n = (p.id * 7) % 11;
-    if (n == 0) n = 3;
-    final low = n <= 5;
-    final similar = products
-        .where((x) => x.id != p.id && (x.tag == p.tag || x.group == p.group))
-        .take(6)
-        .toList();
-    return Column(
-      children: [
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.only(top: 8),
-          padding: const EdgeInsets.all(16),
-          color: card(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(low ? Icons.local_fire_department : Icons.check_circle, color: low ? Colors.red : green, size: 18),
-                  Text(
-                    low ? '  Only $n left - order soon' : '  In stock',
-                    style: TextStyle(color: low ? Colors.red : green, fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ValueListenableBuilder<String>(
-                valueListenable: pickedColor,
-                builder: (context, sel, _) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Colour: $sel', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        for (final e in colorOptions.entries)
-                          GestureDetector(
-                            onTap: () => pickedColor.value = e.key,
-                            child: Container(
-                              margin: const EdgeInsets.only(right: 10),
-                              width: 34,
-                              height: 34,
-                              decoration: BoxDecoration(
-                                color: e.value,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: sel == e.key ? blue : Colors.grey, width: sel == e.key ? 3 : 1),
-                              ),
-                              child: sel == e.key ? const Icon(Icons.check, color: Colors.white, size: 18) : null,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
+    if (recentlyViewed.isEmpty) return const SizedBox.shrink();
+    return Container(
+      color: card(context),
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              'Recently Viewed',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
           ),
-        ),
-        if (similar.isNotEmpty)
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            color: card(context),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 175,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               children: [
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: Text('Similar products', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 190,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    children: [
-                      for (final x in similar)
-                        GestureDetector(
-                          onTap: () => openProduct(context, x),
-                          child: Container(
-                            width: 110,
-                            margin: const EdgeInsets.only(right: 10),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: SizedBox(width: double.infinity, child: NetImg(x)),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(x.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                                Text('₹${x.price}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              ],
+                for (final p in recentlyViewed)
+                  GestureDetector(
+                    onTap: () => openProduct(context, p),
+                    child: Container(
+                      width: 115,
+                      margin: const EdgeInsets.only(right: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: NetImg(p),
+                              ),
                             ),
                           ),
-                        ),
-                    ],
+                          const SizedBox(height: 4),
+                          Text(
+                            p.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          Text(
+                            '₹${p.price}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-// ---------- Profile ----------
+// ---------- Info Pages (About us, Contact us, Return policy) ----------
+
+class InfoPage extends StatelessWidget {
+  final String title;
+  final List<(String, String)> sections;
+
+  const InfoPage({
+    super.key,
+    required this.title,
+    required this.sections,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: blueBar(title),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          for (final sec in sections)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: card(context),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    sec.$1,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    sec.$2,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+void openAboutUs(BuildContext context) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => const InfoPage(
+        title: 'About Us',
+        sections: [
+          (
+            'Welcome to Style Shop',
+            'Style Shop ek modern online shopping store hai jahan aapko fashion, mobiles, electronics aur home essentials best prices aur fast delivery ke saath milte hain.',
+          ),
+          (
+            'Quality & Trust',
+            'Har product ko quality aur customer satisfaction ke saath list kiya gaya hai. Transparent pricing, coupon offers aur easy return policy hamari priority hai.',
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+void openContactUs(BuildContext context) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => const InfoPage(
+        title: 'Contact Us',
+        sections: [
+          (
+            'Customer Support Email',
+            'support@styleshop.example.com — Aap apne order, delivery ya payment se judi kisi bhi query ke liye humein mail kar sakte hain.',
+          ),
+          (
+            'Support Hours',
+            'Monday to Saturday, 9:00 AM to 7:00 PM IST.',
+          ),
+          (
+            'Office Address',
+            'Style Shop Retail Hub, Sahibzada Ajit Singh Nagar, Punjab, India.',
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+void openReturnPolicy(BuildContext context) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => const InfoPage(
+        title: 'Return & Refund Policy',
+        sections: [
+          (
+            '7 Days Easy Returns',
+            'Delivery ke 7 din ke andar agar product damaged, defective ya size/variant issue ke saath mile to aap return/exchange ke liye request kar sakte hain.',
+          ),
+          (
+            'Eligibility Conditions',
+            'Item unused hona chahiye aur original tags, packaging aur accessories ke saath hona zaroori hai.',
+          ),
+          (
+            'Refund Timeline',
+            'Return item verify hone ke baad prepaid/UPI/card refund 3–5 working days mein source account mein credit ho jata hai.',
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+// ---------- Profile Page ----------
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -380,28 +322,30 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  final name = TextEditingController(text: profile.name);
-  final phone = TextEditingController(text: profile.phone);
-  final addr = TextEditingController(text: profile.address);
-  final pin = TextEditingController(text: profile.pin);
+  late final TextEditingController nameCtrl;
+  late final TextEditingController addrCtrl;
+  late final TextEditingController pinCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    nameCtrl = TextEditingController(text: profile.name);
+    addrCtrl = TextEditingController(text: profile.address);
+    pinCtrl = TextEditingController(text: profile.pin);
+  }
 
   @override
   void dispose() {
-    name.dispose();
-    phone.dispose();
-    addr.dispose();
-    pin.dispose();
+    nameCtrl.dispose();
+    addrCtrl.dispose();
+    pinCtrl.dispose();
     super.dispose();
   }
 
-  void info(String title, String text) {
-    showDialog<void>(
-      context: context,
-      builder: (d) => AlertDialog(
-        title: Text(title),
-        content: Text(text),
-        actions: [TextButton(onPressed: () => Navigator.pop(d), child: const Text('OK'))],
-      ),
+  void _saveProfile() {
+    rememberAddress(nameCtrl.text, addrCtrl.text, pinCtrl.text);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile & delivery address saved!')),
     );
   }
 
@@ -410,67 +354,102 @@ class _ProfilePageState extends State<ProfilePage> {
     return Scaffold(
       appBar: blueBar('My Profile'),
       body: ListView(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(12),
         children: [
           Container(
-            color: card(context),
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: card(context),
+              borderRadius: BorderRadius.circular(10),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('SAVED ADDRESS', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-                TextField(controller: name, decoration: const InputDecoration(labelText: 'Full name')),
-                TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone')),
-                TextField(controller: addr, decoration: const InputDecoration(labelText: 'Address')),
-                TextField(controller: pin, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Pincode')),
+                const Text(
+                  'Delivery Details',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 12),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: addrCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Address',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: pinCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Pincode',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 14),
                 FilledButton(
-                  onPressed: () {
-                    profile.name = name.text.trim();
-                    profile.phone = phone.text.trim();
-                    profile.address = addr.text.trim();
-                    profile.pin = pin.text.trim();
-                    saveAll();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Address save ho gaya'), duration: Duration(seconds: 1)),
-                    );
-                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: blue,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                  ),
+                  onPressed: _saveProfile,
                   child: const Text('SAVE'),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
-          ValueListenableBuilder<bool>(
-            valueListenable: darkMode,
-            builder: (context, dark, _) => Container(
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
               color: card(context),
-              child: SwitchListTile(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: ValueListenableBuilder<bool>(
+              valueListenable: darkMode,
+              builder: (context, dark, _) => SwitchListTile(
                 title: const Text('Dark mode'),
                 value: dark,
                 onChanged: (v) => darkMode.value = v,
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Container(
-            color: card(context),
+            decoration: BoxDecoration(
+              color: card(context),
+              borderRadius: BorderRadius.circular(10),
+            ),
             child: Column(
               children: [
                 ListTile(
                   leading: const Icon(Icons.info_outline),
                   title: const Text('About us'),
-                  onTap: () => info('About Style Shop', 'Style Shop ek demo shopping app hai jo Flutter mein banayi gayi hai.'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => openAboutUs(context),
                 ),
+                const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.support_agent),
                   title: const Text('Contact us'),
-                  onTap: () => info('Contact us', 'Email: support@styleshop.example\nPhone: +91 00000 00000\n(Ye demo details hain, apni asli details yahan likho.)'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => openContactUs(context),
                 ),
+                const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.replay),
+                  leading: const Icon(Icons.assignment_return_outlined),
                   title: const Text('Return policy'),
-                  onTap: () => info('Return policy', 'Delivery ke 7 din ke andar product wapas kar sakte ho. Product use na hua ho aur tag laga ho.'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => openReturnPolicy(context),
                 ),
               ],
             ),

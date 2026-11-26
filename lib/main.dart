@@ -2607,9 +2607,17 @@ class CheckoutPage extends StatefulWidget {
 class _CheckoutPageState extends State<CheckoutPage> {
   String pay = 'UPI';
   bool _processingPay = false;
-  final name = TextEditingController(text: profile.name);
-  final addr = TextEditingController(text: profile.address);
-  final pin = TextEditingController(text: profile.pin);
+  late final TextEditingController name;
+  late final TextEditingController addr;
+  late final TextEditingController pin;
+
+  @override
+  void initState() {
+    super.initState();
+    name = TextEditingController(text: profile.name);
+    addr = TextEditingController(text: profile.address);
+    pin = TextEditingController(text: profile.pin);
+  }
 
   @override
   void dispose() {
