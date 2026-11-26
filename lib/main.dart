@@ -91,6 +91,7 @@ class Product {
   final int mrp;
   final double rating;
   final int reviews;
+  final int stock;
   final IconData icon;
   final Color color;
   final String img;
@@ -109,6 +110,7 @@ class Product {
     this.icon,
     this.color,
     this.img, {
+    this.stock = 12,
     this.variants = const [],
   });
 
@@ -136,6 +138,7 @@ final List<Product> products = [
     Icons.checkroom,
     const Color(0xFF8B5E3C),
     px(15133974),
+    stock: 3,
     variants: [
       ProductVariant('Brown', const Color(0xFF8B5E3C), [
         px(15133974),
@@ -164,6 +167,7 @@ final List<Product> products = [
     Icons.checkroom,
     const Color(0xFFB5651D),
     px(756484),
+    stock: 7,
     variants: [
       ProductVariant('Tan', const Color(0xFFB5651D), [
         px(756484),
@@ -188,6 +192,7 @@ final List<Product> products = [
     Icons.woman,
     const Color(0xFFD4537E),
     px(4380970),
+    stock: 2,
     variants: [
       ProductVariant('Pink', const Color(0xFFD4537E), [
         px(4380970),
@@ -212,6 +217,7 @@ final List<Product> products = [
     Icons.dry_cleaning,
     const Color(0xFF1D9E75),
     px(2379005),
+    stock: 20,
     variants: [
       ProductVariant('Green', const Color(0xFF1D9E75), [
         px(2379005),
@@ -240,6 +246,7 @@ final List<Product> products = [
     Icons.man,
     const Color(0xFF378ADD),
     px(991509),
+    stock: 3,
     variants: [
       ProductVariant('Blue', const Color(0xFF378ADD), [px(991509)]),
       ProductVariant('Black', const Color(0xFF1F2937), [px(1072036)]),
@@ -310,6 +317,7 @@ final List<Product> products = [
     Icons.smartphone,
     const Color(0xFF3C5A8B),
     px(404280),
+    stock: 3,
     variants: [
       ProductVariant('Midnight Blue', const Color(0xFF1E3A8A), [px(404280)]),
       ProductVariant('Graphite Black', const Color(0xFF222222), [px(18105)]),
@@ -421,16 +429,64 @@ class CartLine {
     int? unitPrice,
   })  : imageUrl = imageUrl ?? p.img,
         unitPrice = unitPrice ?? p.price;
+
+  Map<String, dynamic> toJson() => {
+        'productId': p.id,
+        'size': size,
+        'qty': qty,
+        'colorName': colorName,
+        'imageUrl': imageUrl,
+        'unitPrice': unitPrice,
+      };
+
+  static CartLine? fromJson(Map<String, dynamic> j) {
+    final id = j['productId'] as int?;
+    final prod = products.where((e) => e.id == id).firstOrNull;
+    if (prod == null) return null;
+    return CartLine(
+      prod,
+      (j['size'] ?? 'M').toString(),
+      (j['qty'] ?? 1) as int,
+      colorName: (j['colorName'] ?? 'Default').toString(),
+      imageUrl: j['imageUrl']?.toString(),
+      unitPrice: j['unitPrice'] as int?,
+    );
+  }
 }
 
 class Order {
   final String id;
   final List<String> items;
   final int total;
-  DateTime time = DateTime.now();
-  Order(this.id, this.items, this.total);
+  DateTime time;
+  String? statusOverride;
+
+  Order(
+    this.id,
+    this.items,
+    this.total, {
+    DateTime? time,
+    this.statusOverride,
+  }) : time = time ?? DateTime.now();
 
   int get step => (DateTime.now().difference(time).inSeconds ~/ 15).clamp(0, 3);
+  String get statusLabel => statusOverride ?? trackSteps[step];
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'items': items,
+        'total': total,
+        'time': time.toIso8601String(),
+        'statusOverride': statusOverride,
+      };
+
+  factory Order.fromJson(Map<String, dynamic> j) => Order(
+        (j['id'] ?? '').toString(),
+        ((j['items'] as List?) ?? []).map((e) => e.toString()).toList(),
+        (j['total'] ?? 0) as int,
+        time: DateTime.tryParse((j['time'] ?? '').toString()),
+        statusOverride: j['statusOverride']?.toString(),
+      );
 }
 
 const trackSteps = ['Placed', 'Shipped', 'Out for delivery', 'Delivered'];
@@ -440,6 +496,14 @@ class Review {
   final int stars;
   final String text;
   Review(this.name, this.stars, this.text);
+
+  Map<String, dynamic> toJson() => {'name': name, 'stars': stars, 'text': text};
+
+  factory Review.fromJson(Map<String, dynamic> j) => Review(
+        (j['name'] ?? 'User').toString(),
+        (j['stars'] ?? 5) as int,
+        (j['text'] ?? '').toString(),
+      );
 }
 
 class Store extends ChangeNotifier {
@@ -455,6 +519,50 @@ class Store extends ChangeNotifier {
   int get couponOff => couponValue(coupon, subTotal);
   int get total => subTotal - couponOff;
 
+  void _sync() {
+    saveStoreToStorage();
+    notifyListeners();
+  }
+
+  Map<String, dynamic> toJson() => {
+        'lines': lines.map((l) => l.toJson()).toList(),
+        'wish': wish.toList(),
+        'orders': orders.map((o) => o.toJson()).toList(),
+        'coupon': coupon,
+        'reviews': reviews.map(
+          (k, v) => MapEntry(k.toString(), v.map((r) => r.toJson()).toList()),
+        ),
+      };
+
+  void loadFromJson(Map<String, dynamic> j) {
+    lines.clear();
+    for (final item in ((j['lines'] as List?) ?? [])) {
+      final line = CartLine.fromJson(Map<String, dynamic>.from(item as Map));
+      if (line != null) lines.add(line);
+    }
+    wish
+      ..clear()
+      ..addAll(((j['wish'] as List?) ?? []).map((e) => e as int));
+    orders
+      ..clear()
+      ..addAll(
+        ((j['orders'] as List?) ?? [])
+            .map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))),
+      );
+    coupon = j['coupon']?.toString();
+    final revMap = (j['reviews'] as Map?) ?? {};
+    reviews.clear();
+    revMap.forEach((k, v) {
+      final pid = int.tryParse(k.toString());
+      if (pid != null && v is List) {
+        reviews[pid] = v
+            .map((r) => Review.fromJson(Map<String, dynamic>.from(r as Map)))
+            .toList();
+      }
+    });
+    notifyListeners();
+  }
+
   void add(
     Product p,
     String size, {
@@ -465,7 +573,7 @@ class Store extends ChangeNotifier {
     for (final l in lines) {
       if (l.p.id == p.id && l.size == size && l.colorName == colorName) {
         l.qty++;
-        notifyListeners();
+        _sync();
         return;
       }
     }
@@ -479,24 +587,24 @@ class Store extends ChangeNotifier {
         unitPrice: unitPrice,
       ),
     );
-    notifyListeners();
+    _sync();
   }
 
   void change(CartLine l, int d) {
     l.qty += d;
     if (l.qty <= 0) lines.remove(l);
-    notifyListeners();
+    _sync();
   }
 
   void toggleWish(Product p) {
     if (!wish.remove(p.id)) wish.add(p.id);
-    notifyListeners();
+    _sync();
   }
 
   bool applyCoupon(String c) {
     if (couponOk(c)) {
       coupon = c.trim().toUpperCase();
-      notifyListeners();
+      _sync();
       return true;
     }
     return false;
@@ -504,7 +612,7 @@ class Store extends ChangeNotifier {
 
   void removeCoupon() {
     coupon = null;
-    notifyListeners();
+    _sync();
   }
 
   List<Review> reviewsFor(Product p) => reviews.putIfAbsent(
@@ -517,7 +625,7 @@ class Store extends ChangeNotifier {
 
   void addReview(Product p, Review r) {
     reviewsFor(p).insert(0, r);
-    notifyListeners();
+    _sync();
   }
 
   String placeOrder() {
@@ -537,13 +645,43 @@ class Store extends ChangeNotifier {
     );
     lines.clear();
     coupon = null;
-    notifyListeners();
+    _sync();
     return id;
   }
 
   void removeOrder(String orderId) {
     orders.removeWhere((o) => o.id == orderId);
-    notifyListeners();
+    _sync();
+  }
+
+  void cancelOrder(String orderId) {
+    final o = orders.where((e) => e.id == orderId).firstOrNull;
+    if (o != null) {
+      o.statusOverride = 'Cancelled';
+      _sync();
+    }
+  }
+
+  void returnOrder(String orderId) {
+    final o = orders.where((e) => e.id == orderId).firstOrNull;
+    if (o != null) {
+      o.statusOverride = 'Return Requested';
+      _sync();
+    }
+  }
+
+  String reorder(Order oldOrder) {
+    final id = 'OD${DateTime.now().millisecondsSinceEpoch % 1000000000}';
+    orders.insert(
+      0,
+      Order(
+        id,
+        List<String>.from(oldOrder.items),
+        oldOrder.total,
+      ),
+    );
+    _sync();
+    return id;
   }
 }
 
@@ -1013,7 +1151,9 @@ class _RootPageState extends State<RootPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) openLoginPopup(context);
+      if (mounted && profile.loggedInUser == null) {
+        openLoginPopup(context);
+      }
     });
   }
 
@@ -1384,7 +1524,10 @@ class _HomeTabState extends State<HomeTab> {
                         valueListenable: darkMode,
                         builder: (context, dark, _) => GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: () => darkMode.value = !darkMode.value,
+                          onTap: () {
+                            darkMode.value = !darkMode.value;
+                            _writeStorage(_kDarkKey, darkMode.value.toString());
+                          },
                           child: Padding(
                             padding: const EdgeInsets.all(4),
                             child: Icon(
@@ -1797,9 +1940,11 @@ class OrdersPage extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                trackSteps[o.step],
-                                style: const TextStyle(
-                                  color: green,
+                                o.statusLabel,
+                                style: TextStyle(
+                                  color: o.statusLabel == 'Cancelled'
+                                      ? Colors.red
+                                      : green,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -1841,15 +1986,64 @@ class OrdersPage extends StatelessWidget {
                         'Total ₹${o.total}',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      TextButton.icon(
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => TrackPage(order: o),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => TrackPage(order: o),
+                              ),
+                            ),
+                            icon: const Icon(Icons.local_shipping_outlined),
+                            label: const Text('TRACK ORDER'),
                           ),
-                        ),
-                        icon: const Icon(Icons.local_shipping_outlined),
-                        label: const Text('TRACK ORDER'),
+                          if (o.statusOverride == null && o.step == 0)
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.red,
+                              ),
+                              onPressed: () {
+                                store.cancelOrder(o.id);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Order ${o.id} cancelled'),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.cancel_outlined, size: 18),
+                              label: const Text('CANCEL ORDER'),
+                            ),
+                          if (o.statusOverride == null && o.step == 3)
+                            TextButton.icon(
+                              onPressed: () {
+                                store.returnOrder(o.id);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Return requested for ${o.id}',
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.assignment_return, size: 18),
+                              label: const Text('RETURN'),
+                            ),
+                          TextButton.icon(
+                            onPressed: () {
+                              final newId = store.reorder(o);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Re-ordered as $newId'),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.replay, size: 18),
+                            label: const Text('ORDER AGAIN'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -2059,14 +2253,27 @@ class _DetailPageState extends State<DetailPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                p.brand.toUpperCase(),
-                style: const TextStyle(
-                  color: blue,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                  letterSpacing: 1,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    p.brand.toUpperCase(),
+                    style: const TextStyle(
+                      color: blue,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  Text(
+                    p.stock <= 3 ? 'Only ${p.stock} left' : 'In stock',
+                    style: TextStyle(
+                      color: p.stock <= 3 ? orange : green,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 4),
               Text(
@@ -2168,18 +2375,31 @@ class _DetailPageState extends State<DetailPage> {
         if (p.isCloth)
           section([
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Select Size: ',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                Row(
+                  children: [
+                    const Text(
+                      'Select Size: ',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      size,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: blue,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  size,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: blue,
-                  ),
+                TextButton.icon(
+                  onPressed: () => showSizeChartDialog(context, p),
+                  icon: const Icon(Icons.straighten, size: 16),
+                  label: const Text('Size Chart'),
                 ),
               ],
             ),
@@ -2308,7 +2528,16 @@ class _DetailPageState extends State<DetailPage> {
     );
 
     return Scaffold(
-      appBar: blueBar(p.brand),
+      appBar: blueBar(
+        p.brand,
+        actions: [
+          IconButton(
+            tooltip: 'Share Product',
+            onPressed: () => shareProductLink(context, p),
+            icon: const Icon(Icons.share, color: Colors.white),
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(12),
         child: isWide
@@ -2610,7 +2839,7 @@ class CartPage extends StatelessWidget {
   }
 }
 
-// ---------- Checkout ----------
+// ---------- Checkout (with Address Book & Gateway Verification) ----------
 
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({super.key});
@@ -2661,7 +2890,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         builder: (ctx) {
           final ctrl = TextEditingController();
           return AlertDialog(
-            title: Text('$pay Payment'),
+            title: Text('$pay — Gateway Checkout'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2679,7 +2908,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Payment complete hone ke baad hi order place hoga.',
+                  'Payment complete hone ke baad hi order place hoga (Razorpay/Gateway ready).',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
@@ -2787,6 +3016,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                if (profile.addresses.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      for (final a in profile.addresses)
+                        ActionChip(
+                          avatar: const Icon(Icons.location_on, size: 16),
+                          label: Text('${a.label} (${a.pin})'),
+                          onPressed: () {
+                            name.text = a.name;
+                            addr.text = a.address;
+                            pin.text = a.pin;
+                          },
+                        ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 8),
                 TextField(
                   controller: name,
