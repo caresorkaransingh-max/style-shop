@@ -145,7 +145,12 @@ void handleDeepLinkIfAny(BuildContext context) {
   } catch (_) {}
 }
 
-void rememberAddress(String name, String address, String pin, {String label = 'Home'}) {
+void rememberAddress(
+  String name,
+  String address,
+  String pin, {
+  String label = 'Home',
+}) {
   final cleanName = name.trim();
   final cleanAddr = address.trim();
   final cleanPin = pin.trim();
@@ -574,7 +579,7 @@ class RecentlyViewed extends StatelessWidget {
   }
 }
 
-// Admin Panel (Add Products with Color Variants & Images + Manage Orders)
+// Admin Panel (Add Products with Color Variants & Images + Remove Products + Manage Orders)
 class AdminPanelPage extends StatefulWidget {
   const AdminPanelPage({super.key});
 
@@ -589,7 +594,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
   final mrpCtrl = TextEditingController(text: '2499');
   final stockCtrl = TextEditingController(text: '10');
 
-  // Variant 1 (Main)
+  // Variant 1
   final c1NameCtrl = TextEditingController(text: 'Black');
   final c1ImgCtrl = TextEditingController(text: px(1072036));
   Color c1Color = const Color(0xFF222222);
@@ -807,6 +812,18 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     );
   }
 
+  void _removeProduct(Product p) {
+    products.removeWhere((item) => item.id == p.id);
+    recentlyViewed.removeWhere((item) => item.id == p.id);
+    store.wish.remove(p.id);
+    store.lines.removeWhere((line) => line.p.id == p.id);
+    saveStoreToStorage();
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('"${p.name}" store se remove kar diya gaya')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -976,6 +993,62 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
             ),
           ),
           const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: card(context),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Store Products (${products.length})',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Agar koi product galat add ho gaya ho ya hatana ho to Remove dabayein.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
+                if (products.isEmpty)
+                  const Text(
+                    'Store mein koi product nahi hai',
+                    style: TextStyle(color: Colors.grey),
+                  )
+                else
+                  for (final p in List<Product>.from(products))
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: NetImg(p),
+                        ),
+                      ),
+                      title: Text(
+                        p.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        '${p.brand} • ${p.group} • ₹${p.price}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: TextButton.icon(
+                        style: TextButton.styleFrom(foregroundColor: Colors.red),
+                        onPressed: () => _removeProduct(p),
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('Remove'),
+                      ),
+                    ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           ListenableBuilder(
             listenable: store,
             builder: (context, _) => Container(
@@ -993,7 +1066,10 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   ),
                   const SizedBox(height: 8),
                   if (store.orders.isEmpty)
-                    const Text('Abhi koi order nahi hai', style: TextStyle(color: Colors.grey))
+                    const Text(
+                      'Abhi koi order nahi hai',
+                      style: TextStyle(color: Colors.grey),
+                    )
                   else
                     for (final o in store.orders)
                       ListTile(
@@ -1013,7 +1089,10 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                           items: const [
                             DropdownMenuItem(value: 'Placed', child: Text('Placed')),
                             DropdownMenuItem(value: 'Shipped', child: Text('Shipped')),
-                            DropdownMenuItem(value: 'Out for delivery', child: Text('Out for delivery')),
+                            DropdownMenuItem(
+                              value: 'Out for delivery',
+                              child: Text('Out for delivery'),
+                            ),
                             DropdownMenuItem(value: 'Delivered', child: Text('Delivered')),
                             DropdownMenuItem(value: 'Cancelled', child: Text('Cancelled')),
                           ],
@@ -1206,7 +1285,9 @@ Future<void> openLoginPopup(BuildContext context) async {
                           ? () {
                               startResendTimer();
                               ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(content: Text('OTP resent! (Demo: 1234)')),
+                                const SnackBar(
+                                  content: Text('OTP resent! (Demo: 1234)'),
+                                ),
                               );
                             }
                           : null,
@@ -1256,7 +1337,9 @@ Future<void> openLoginPopup(BuildContext context) async {
                               );
                               Navigator.pop(ctx);
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Verified & logged in as $val')),
+                                SnackBar(
+                                  content: Text('Verified & logged in as $val'),
+                                ),
                               );
                             }
                           : null),
@@ -1850,7 +1933,10 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.admin_panel_settings_outlined, color: blue),
+                  leading: const Icon(
+                    Icons.admin_panel_settings_outlined,
+                    color: blue,
+                  ),
                   title: const Text('Admin Panel'),
                   subtitle: const Text('Add products & manage order status'),
                   trailing: const Icon(Icons.chevron_right),
@@ -2039,15 +2125,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Widget box(List<Widget> children) => Container(
-    width: double.infinity,
-    margin: const EdgeInsets.only(bottom: 8),
-    padding: const EdgeInsets.all(14),
-    color: card(context),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
-    ),
-  );
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(14),
+        color: card(context),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
