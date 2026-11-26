@@ -22,6 +22,7 @@ String px(int id) =>
     'https://images.pexels.com/photos/$id/pexels-photo-$id.jpeg?auto=compress&cs=tinysrgb&w=600';
 
 final ValueNotifier<bool> darkMode = ValueNotifier<bool>(false);
+final ValueNotifier<int> catalogVersion = ValueNotifier<int>(0);
 Color card(BuildContext c) => Theme.of(c).colorScheme.surface;
 
 final ValueNotifier<String> deliverTo = ValueNotifier<String>(
@@ -73,6 +74,18 @@ class ProductVariant {
   final Color swatch;
   final List<String> images;
   const ProductVariant(this.colorName, this.swatch, this.images);
+
+  Map<String, dynamic> toJson() => {
+        'colorName': colorName,
+        'swatch': swatch.value,
+        'images': images,
+      };
+
+  factory ProductVariant.fromJson(Map<String, dynamic> j) => ProductVariant(
+        (j['colorName'] ?? 'Default').toString(),
+        Color((j['swatch'] as int?) ?? 0xFF2874F0),
+        ((j['images'] as List?) ?? []).map((e) => e.toString()).toList(),
+      );
 }
 
 class Product {
@@ -89,6 +102,7 @@ class Product {
   final IconData icon;
   final Color color;
   final String img;
+  final String? videoUrl;
   final List<ProductVariant> variants;
 
   const Product(
@@ -105,6 +119,7 @@ class Product {
     this.color,
     this.img, {
     this.stock = 12,
+    this.videoUrl,
     this.variants = const [],
   });
 
@@ -116,6 +131,43 @@ class Product {
       : [
           ProductVariant('Default', color, [img]),
         ];
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'brand': brand,
+        'tag': tag,
+        'group': group,
+        'price': price,
+        'mrp': mrp,
+        'rating': rating,
+        'reviews': reviews,
+        'stock': stock,
+        'color': color.value,
+        'img': img,
+        'videoUrl': videoUrl,
+        'variants': variants.map((v) => v.toJson()).toList(),
+      };
+
+  factory Product.fromJson(Map<String, dynamic> j) => Product(
+        (j['id'] ?? 1) as int,
+        (j['name'] ?? 'Product').toString(),
+        (j['brand'] ?? 'Style Co').toString(),
+        (j['tag'] ?? 'T-Shirt').toString(),
+        (j['group'] ?? 'Men').toString(),
+        (j['price'] ?? 999) as int,
+        (j['mrp'] ?? 1499) as int,
+        ((j['rating'] ?? 4.5) as num).toDouble(),
+        (j['reviews'] ?? 100) as int,
+        Icons.shopping_bag,
+        Color((j['color'] as int?) ?? 0xFF2874F0),
+        (j['img'] ?? px(15133974)).toString(),
+        stock: (j['stock'] ?? 10) as int,
+        videoUrl: j['videoUrl']?.toString(),
+        variants: ((j['variants'] as List?) ?? [])
+            .map((v) => ProductVariant.fromJson(Map<String, dynamic>.from(v as Map)))
+            .toList(),
+      );
 }
 
 final List<Product> products = [
@@ -1431,420 +1483,425 @@ class _HomeTabState extends State<HomeTab> {
 
   @override
   Widget build(BuildContext context) {
-    final shown = products
-        .where((p) => filter == 'All' || p.tag == filter || p.group == filter)
-        .where(
-          (p) => (p.name + p.brand).toLowerCase().contains(query.toLowerCase()),
-        )
-        .where((p) => brandF == 'All' || p.brand == brandF)
-        .where((p) => p.rating >= minRating && p.price <= maxPrice)
-        .toList();
-    if (sort == 'Price: Low to High') shown.sort((a, b) => a.price - b.price);
-    if (sort == 'Price: High to Low') shown.sort((a, b) => b.price - a.price);
-    if (sort == 'Rating') shown.sort((a, b) => b.rating.compareTo(a.rating));
-    if (sort == 'Discount') shown.sort((a, b) => b.off - a.off);
+    return ValueListenableBuilder<int>(
+      valueListenable: catalogVersion,
+      builder: (context, _, __) {
+        final shown = products
+            .where((p) => filter == 'All' || p.tag == filter || p.group == filter)
+            .where(
+              (p) => (p.name + p.brand).toLowerCase().contains(query.toLowerCase()),
+            )
+            .where((p) => brandF == 'All' || p.brand == brandF)
+            .where((p) => p.rating >= minRating && p.price <= maxPrice)
+            .toList();
+        if (sort == 'Price: Low to High') shown.sort((a, b) => a.price - b.price);
+        if (sort == 'Price: High to Low') shown.sort((a, b) => b.price - a.price);
+        if (sort == 'Rating') shown.sort((a, b) => b.rating.compareTo(a.rating));
+        if (sort == 'Discount') shown.sort((a, b) => b.off - a.off);
 
-    const cats = [
-      'All',
-      'Men',
-      'Women',
-      'Mobiles',
-      'Electronics',
-      'Home',
-      'Jacket',
-      'Dress',
-      'T-Shirt',
-      'Pant',
-    ];
+        const cats = [
+          'All',
+          'Men',
+          'Women',
+          'Mobiles',
+          'Electronics',
+          'Home',
+          'Jacket',
+          'Dress',
+          'T-Shirt',
+          'Pant',
+        ];
 
-    return Scaffold(
-      body: Column(
-        children: [
-          Container(
-            color: blue,
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: SafeArea(
-              bottom: false,
-              child: Column(
-                children: [
-                  const SizedBox(height: 8),
-                  Row(
+        return Scaffold(
+          body: Column(
+            children: [
+              Container(
+                color: blue,
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
                     children: [
-                      const BrandLogo(),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: updateLocation,
-                          child: ValueListenableBuilder<String>(
-                            valueListenable: deliverTo,
-                            builder: (context, v, _) => Row(
-                              children: [
-                                const Icon(
-                                  Icons.location_on,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                                Flexible(
-                                  child: Text(
-                                    ' $v',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const BrandLogo(),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: updateLocation,
+                              child: ValueListenableBuilder<String>(
+                                valueListenable: deliverTo,
+                                builder: (context, v, _) => Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.location_on,
                                       color: Colors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
+                                      size: 16,
                                     ),
-                                  ),
+                                    Flexible(
+                                      child: Text(
+                                        ' $v',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                      ValueListenableBuilder<bool>(
-                        valueListenable: darkMode,
-                        builder: (context, dark, _) => GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            darkMode.value = !darkMode.value;
-                            saveDarkMode(darkMode.value);
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Icon(
-                              dark ? Icons.light_mode : Icons.dark_mode,
-                              color: Colors.white,
-                              size: 20,
+                          ValueListenableBuilder<bool>(
+                            valueListenable: darkMode,
+                            builder: (context, dark, _) => GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                darkMode.value = !darkMode.value;
+                                saveDarkMode(darkMode.value);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(
+                                  dark ? Icons.light_mode : Icons.dark_mode,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
                             ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: searchCtrl,
+                        textInputAction: TextInputAction.search,
+                        style: const TextStyle(color: Colors.black87),
+                        onChanged: (v) {
+                          setState(() => query = v);
+                          scrollToGrid();
+                        },
+                        decoration: InputDecoration(
+                          hintText: listening
+                              ? 'Listening... bolo'
+                              : 'Search for products, brands and more',
+                          hintStyle: const TextStyle(color: Colors.grey),
+                          prefixIcon: const Icon(Icons.search, color: blue),
+                          suffixIcon: query.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.close, color: Colors.grey),
+                                  onPressed: () {
+                                    searchCtrl.clear();
+                                    setState(() => query = '');
+                                  },
+                                )
+                              : IconButton(
+                                  icon: Icon(
+                                    listening ? Icons.mic : Icons.mic_none,
+                                    color: listening ? Colors.red : Colors.grey,
+                                  ),
+                                  onPressed: startVoice,
+                                ),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: EdgeInsets.zero,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: searchCtrl,
-                    textInputAction: TextInputAction.search,
-                    style: const TextStyle(color: Colors.black87),
-                    onChanged: (v) {
-                      setState(() => query = v);
-                      scrollToGrid();
-                    },
-                    decoration: InputDecoration(
-                      hintText: listening
-                          ? 'Listening... bolo'
-                          : 'Search for products, brands and more',
-                      hintStyle: const TextStyle(color: Colors.grey),
-                      prefixIcon: const Icon(Icons.search, color: blue),
-                      suffixIcon: query.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.close, color: Colors.grey),
-                              onPressed: () {
-                                searchCtrl.clear();
-                                setState(() => query = '');
-                              },
-                            )
-                          : IconButton(
-                              icon: Icon(
-                                listening ? Icons.mic : Icons.mic_none,
-                                color: listening ? Colors.red : Colors.grey,
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  children: [
+                    Container(
+                      color: card(context),
+                      height: 98,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        children: [
+                          for (final c in cats)
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => pick(c),
+                              child: SizedBox(
+                                width: 74,
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      width: 56,
+                                      height: 56,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: filter == c
+                                              ? blue
+                                              : Colors.transparent,
+                                          width: 2,
+                                        ),
+                                      ),
+                                      padding: const EdgeInsets.all(2),
+                                      child: ClipOval(
+                                        child: c == 'All'
+                                            ? Container(
+                                                color: const Color(0xFFDCE8FD),
+                                                child: const Icon(
+                                                  Icons.apps,
+                                                  color: blue,
+                                                ),
+                                              )
+                                            : NetImg(
+                                                products.firstWhere(
+                                                  (p) => p.tag == c || p.group == c,
+                                                  orElse: () => products.first,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      c,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: filter == c
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                        color: filter == c ? blue : null,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              onPressed: startVoice,
                             ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: EdgeInsets.zero,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
+                        ],
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              children: [
-                Container(
-                  color: card(context),
-                  height: 98,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    children: [
-                      for (final c in cats)
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => pick(c),
-                          child: SizedBox(
-                            width: 74,
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 150,
+                      child: PageView.builder(
+                        controller: pc,
+                        itemCount: banners.length,
+                        onPageChanged: (i) => setState(() => page = i),
+                        itemBuilder: (context, i) {
+                          final b = banners[i];
+                          return Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              gradient: LinearGradient(colors: [b.$3, b.$4]),
+                            ),
                             child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Container(
-                                  width: 56,
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: filter == c
-                                          ? blue
-                                          : Colors.transparent,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  padding: const EdgeInsets.all(2),
-                                  child: ClipOval(
-                                    child: c == 'All'
-                                        ? Container(
-                                            color: const Color(0xFFDCE8FD),
-                                            child: const Icon(
-                                              Icons.apps,
-                                              color: blue,
-                                            ),
-                                          )
-                                        : NetImg(
-                                            products.firstWhere(
-                                              (p) => p.tag == c || p.group == c,
-                                              orElse: () => products.first,
-                                            ),
-                                          ),
+                                Text(
+                                  b.$1,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  c,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: filter == c
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: filter == c ? blue : null,
+                                  b.$2,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    'Shop now',
+                                    style: TextStyle(
+                                      color: b.$3,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
+                          );
+                        },
+                      ),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (int i = 0; i < banners.length; i++)
+                          Container(
+                            margin: const EdgeInsets.all(4),
+                            width: page == i ? 16 : 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: page == i ? blue : Colors.grey,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
                           ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 150,
-                  child: PageView.builder(
-                    controller: pc,
-                    itemCount: banners.length,
-                    onPageChanged: (i) => setState(() => page = i),
-                    itemBuilder: (context, i) {
-                      final b = banners[i];
-                      return Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          gradient: LinearGradient(colors: [b.$3, b.$4]),
-                        ),
+                      ],
+                    ),
+                    if (shown.isNotEmpty)
+                      Container(
+                        color: card(context),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(
-                              b.$1,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              b.$2,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
                               child: Text(
-                                'Shop now',
-                                style: TextStyle(
-                                  color: b.$3,
+                                filter == 'All'
+                                    ? 'Deals of the Day'
+                                    : 'Deals on $filter',
+                                style: const TextStyle(
+                                  fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
+                            const SaleTimer(),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              height: 220,
+                              child: ListView(
+                                scrollDirection: Axis.horizontal,
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                children: [
+                                  for (final p in shown.reversed)
+                                    GestureDetector(
+                                      onTap: () => openProduct(context, p),
+                                      child: Container(
+                                        width: 130,
+                                        margin: const EdgeInsets.only(right: 10),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              child: ClipRRect(
+                                                borderRadius: BorderRadius.circular(
+                                                  8,
+                                                ),
+                                                child: SizedBox(
+                                                  width: double.infinity,
+                                                  child: NetImg(p),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              p.name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            Text(
+                                              '${p.off}% off',
+                                              style: const TextStyle(
+                                                color: green,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            Text(
+                                              'From ₹${p.price}',
+                                              style: const TextStyle(
+                                                color: Colors.grey,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
-                      );
-                    },
-                  ),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    for (int i = 0; i < banners.length; i++)
-                      Container(
-                        margin: const EdgeInsets.all(4),
-                        width: page == i ? 16 : 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: page == i ? blue : Colors.grey,
-                          borderRadius: BorderRadius.circular(3),
+                      ),
+                    const RecentlyViewed(),
+                    Padding(
+                      key: gridKey,
+                      padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+                      child: Text(
+                        filter == 'All'
+                            ? 'Top picks for you'
+                            : '$filter collection (${shown.length})',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      child: Row(
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: openSort,
+                            icon: const Icon(Icons.sort, size: 18),
+                            label: Text(sort),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: openFilter,
+                            icon: const Icon(Icons.filter_list, size: 18),
+                            label: const Text('Filter'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (shown.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(child: Text('No products found')),
+                      )
+                    else
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                        gridDelegate:
+                            const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 230,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 8,
+                              childAspectRatio: 0.56,
+                            ),
+                        itemCount: shown.length,
+                        itemBuilder: (context, i) => ProductCard(product: shown[i]),
                       ),
                   ],
                 ),
-                if (shown.isNotEmpty)
-                  Container(
-                    color: card(context),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            filter == 'All'
-                                ? 'Deals of the Day'
-                                : 'Deals on $filter',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const SaleTimer(),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          height: 220,
-                          child: ListView(
-                            scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            children: [
-                              for (final p in shown.reversed)
-                                GestureDetector(
-                                  onTap: () => openProduct(context, p),
-                                  child: Container(
-                                    width: 130,
-                                    margin: const EdgeInsets.only(right: 10),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Expanded(
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            child: SizedBox(
-                                              width: double.infinity,
-                                              child: NetImg(p),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          p.name,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        Text(
-                                          '${p.off}% off',
-                                          style: const TextStyle(
-                                            color: green,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        Text(
-                                          'From ₹${p.price}',
-                                          style: const TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                const RecentlyViewed(),
-                Padding(
-                  key: gridKey,
-                  padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
-                  child: Text(
-                    filter == 'All'
-                        ? 'Top picks for you'
-                        : '$filter collection (${shown.length})',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  child: Row(
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: openSort,
-                        icon: const Icon(Icons.sort, size: 18),
-                        label: Text(sort),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: openFilter,
-                        icon: const Icon(Icons.filter_list, size: 18),
-                        label: const Text('Filter'),
-                      ),
-                    ],
-                  ),
-                ),
-                if (shown.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Center(child: Text('No products found')),
-                  )
-                else
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 230,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                          childAspectRatio: 0.56,
-                        ),
-                    itemCount: shown.length,
-                    itemBuilder: (context, i) => ProductCard(product: shown[i]),
-                  ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -2127,6 +2184,7 @@ class _DetailPageState extends State<DetailPage> {
   String size = 'M';
   int selectedVariantIndex = 0;
   int selectedImageIndex = 0;
+  bool showVideoMode = false;
 
   int get currentPrice {
     final base = widget.product.price;
@@ -2161,6 +2219,7 @@ class _DetailPageState extends State<DetailPage> {
     final chosenSize = p.isCloth ? size : 'Standard';
     final onSurface = Theme.of(context).colorScheme.onSurface;
     final isWide = MediaQuery.of(context).size.width > 760;
+    final hasVideo = p.videoUrl != null && p.videoUrl!.trim().isNotEmpty;
 
     final galleryWidget = Container(
       padding: const EdgeInsets.all(16),
@@ -2172,48 +2231,87 @@ class _DetailPageState extends State<DetailPage> {
         children: [
           Stack(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
+              if (showVideoMode && hasVideo)
+                WebVideoPlayer(
+                  url: p.videoUrl!.trim(),
                   height: isWide ? 420 : 320,
-                  width: double.infinity,
-                  child: InteractiveViewer(
-                    minScale: 1,
-                    maxScale: 4,
-                    child: NetImg(p, url: activeImg, fit: BoxFit.contain),
+                )
+              else
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: SizedBox(
+                    height: isWide ? 420 : 320,
+                    width: double.infinity,
+                    child: InteractiveViewer(
+                      minScale: 1,
+                      maxScale: 4,
+                      child: NetImg(p, url: activeImg, fit: BoxFit.contain),
+                    ),
                   ),
                 ),
-              ),
               Positioned(top: 8, right: 8, child: HeartButton(p)),
             ],
           ),
-          if (images.length > 1) ...[
+          if (images.length > 1 || hasVideo) ...[
             const SizedBox(height: 12),
             SizedBox(
               height: 64,
-              child: ListView.separated(
+              child: ListView(
                 scrollDirection: Axis.horizontal,
                 shrinkWrap: true,
-                itemCount: images.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (context, idx) {
-                  final selected = idx == selectedImageIndex;
-                  return GestureDetector(
-                    onTap: () => setState(() => selectedImageIndex = idx),
-                    child: Container(
-                      width: 64,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: selected ? blue : Colors.grey.shade300,
-                          width: selected ? 2.5 : 1,
+                children: [
+                  for (int idx = 0; idx < images.length; idx++)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: GestureDetector(
+                        onTap: () => setState(() {
+                          showVideoMode = false;
+                          selectedImageIndex = idx;
+                        }),
+                        child: Container(
+                          width: 64,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: (!showVideoMode && idx == selectedImageIndex)
+                                  ? blue
+                                  : Colors.grey.shade300,
+                              width: (!showVideoMode && idx == selectedImageIndex)
+                                  ? 2.5
+                                  : 1,
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: NetImg(p, url: images[idx], fit: BoxFit.cover),
                         ),
                       ),
-                      clipBehavior: Clip.antiAlias,
-                      child: NetImg(p, url: images[idx], fit: BoxFit.cover),
                     ),
-                  );
-                },
+                  if (hasVideo)
+                    GestureDetector(
+                      onTap: () => setState(() => showVideoMode = true),
+                      child: Container(
+                        width: 64,
+                        decoration: BoxDecoration(
+                          color: Colors.black87,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: showVideoMode ? blue : Colors.grey.shade300,
+                            width: showVideoMode ? 2.5 : 1,
+                          ),
+                        ),
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.play_arrow, color: Colors.white, size: 22),
+                            Text(
+                              'Video',
+                              style: TextStyle(color: Colors.white, fontSize: 10),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
@@ -2309,6 +2407,7 @@ class _DetailPageState extends State<DetailPage> {
                 GestureDetector(
                   onTap: () {
                     setState(() {
+                      showVideoMode = false;
                       selectedVariantIndex = idx;
                       selectedImageIndex = 0;
                     });

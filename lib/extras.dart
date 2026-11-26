@@ -74,6 +74,7 @@ final List<Product> recentlyViewed = [];
 const String _kStoreKey = 'styleshop_store_v1';
 const String _kProfileKey = 'styleshop_profile_v1';
 const String _kDarkKey = 'styleshop_dark_v1';
+const String _kCustomProductsKey = 'styleshop_custom_products_v1';
 
 void _writeStorage(String key, String value) {
   try {
@@ -101,6 +102,13 @@ void saveStoreToStorage() {
   _writeStorage(_kStoreKey, jsonEncode(store.toJson()));
 }
 
+void saveCatalogToStorage() {
+  try {
+    final encoded = jsonEncode(products.map((p) => p.toJson()).toList());
+    _writeStorage(_kCustomProductsKey, encoded);
+  } catch (_) {}
+}
+
 Future<void> loadSaved() async {
   try {
     html.document.title = 'Style Shop';
@@ -108,6 +116,21 @@ Future<void> loadSaved() async {
     final darkRaw = _readStorage(_kDarkKey);
     if (darkRaw == 'true') darkMode.value = true;
     if (darkRaw == 'false') darkMode.value = false;
+
+    final cRaw = _readStorage(_kCustomProductsKey);
+    if (cRaw != null && cRaw.isNotEmpty) {
+      final decodedList = jsonDecode(cRaw) as List;
+      final loadedProducts = decodedList
+          .map((e) => Product.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      if (loadedProducts.isNotEmpty) {
+        products
+          ..clear()
+          ..addAll(loadedProducts);
+      }
+    } else {
+      saveCatalogToStorage();
+    }
 
     final pRaw = _readStorage(_kProfileKey);
     if (pRaw != null && pRaw.isNotEmpty) {
@@ -125,6 +148,132 @@ Future<void> loadSaved() async {
       store.loadFromJson(jsonDecode(sRaw) as Map<String, dynamic>);
     }
   } catch (_) {}
+}
+
+// Pick image or video file from device (Web)
+Future<String?> pickMediaFileFromDevice({required bool isVideo}) async {
+  final completer = Completer<String?>();
+  try {
+    final input = html.FileUploadInputElement()
+      ..accept = isVideo ? 'video/*' : 'image/*';
+    input.click();
+
+    input.onChange.listen((_) {
+      final file = input.files?.isNotEmpty == true ? input.files!.first : null;
+      if (file == null) {
+        if (!completer.isCompleted) completer.complete(null);
+        return;
+      }
+
+      if (isVideo) {
+        final blobUrl = html.Url.createObjectUrlFromBlob(file);
+        if (!completer.isCompleted) completer.complete(blobUrl);
+        return;
+      }
+
+      final reader = html.FileReader();
+      reader.onLoadEnd.listen((_) {
+        final res = reader.result?.toString();
+        if (!completer.isCompleted) {
+          completer.complete((res != null && res.isNotEmpty) ? res : null);
+        }
+      });
+      reader.onError.listen((_) {
+        if (!completer.isCompleted) completer.complete(null);
+      });
+      reader.readAsDataUrl(file);
+    });
+
+    Future.delayed(const Duration(seconds: 60), () {
+      if (!completer.isCompleted) completer.complete(null);
+    });
+  } catch (_) {
+    if (!completer.isCompleted) completer.complete(null);
+  }
+  return completer.future;
+}
+
+bool isVideoMediaUrl(String url) {
+  final lower = url.toLowerCase();
+  return lower.startsWith('data:video/') ||
+      lower.contains('.mp4') ||
+      lower.contains('.webm') ||
+      lower.contains('.ogg') ||
+      lower.contains('.mov') ||
+      lower.contains('blob:');
+}
+
+// Web Video Preview Widget for Detail Page
+class WebVideoPlayer extends StatefulWidget {
+  final String url;
+  final double height;
+  const WebVideoPlayer({super.key, required this.url, this.height = 320});
+
+  @override
+  State<WebVideoPlayer> createState() => _WebVideoPlayerState();
+}
+
+class _WebVideoPlayerState extends State<WebVideoPlayer> {
+  late final String _viewType;
+
+  @override
+  void initState() {
+    super.initState();
+    _viewType = 'ss-video-${widget.url.hashCode}-${DateTime.now().microsecondsSinceEpoch}';
+    // ignore: undefined_prefixed_name
+    html.document.registerElement;
+    try {
+      // ignore: avoid_dynamic_calls
+      final uiWeb = (html.window as dynamic);
+      final _ = uiWeb;
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: widget.height,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.black87,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.play_circle_fill, color: Colors.white, size: 64),
+          const SizedBox(height: 10),
+          const Text(
+            'Product Video Attached',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            widget.url,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: blue),
+            onPressed: () {
+              try {
+                html.window.open(widget.url, '_blank');
+              } catch (_) {}
+            },
+            icon: const Icon(Icons.open_in_new, size: 18),
+            label: const Text('OPEN VIDEO IN PLAYER'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // Deep-link support (?product=ID)
@@ -579,7 +728,7 @@ class RecentlyViewed extends StatelessWidget {
   }
 }
 
-// Admin Panel (Add Products with Color Variants & Images + Remove Products + Manage Orders)
+// Admin Panel (Add Products with Color Variants, Upload Image/Video + Remove Products + Manage Orders)
 class AdminPanelPage extends StatefulWidget {
   const AdminPanelPage({super.key});
 
@@ -593,6 +742,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
   final priceCtrl = TextEditingController(text: '1499');
   final mrpCtrl = TextEditingController(text: '2499');
   final stockCtrl = TextEditingController(text: '10');
+  final videoUrlCtrl = TextEditingController();
 
   // Variant 1
   final c1NameCtrl = TextEditingController(text: 'Black');
@@ -631,6 +781,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     priceCtrl.dispose();
     mrpCtrl.dispose();
     stockCtrl.dispose();
+    videoUrlCtrl.dispose();
     c1NameCtrl.dispose();
     c1ImgCtrl.dispose();
     c2NameCtrl.dispose();
@@ -638,6 +789,30 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     c3NameCtrl.dispose();
     c3ImgCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _uploadVariantImage(TextEditingController imgCtrl) async {
+    final picked = await pickMediaFileFromDevice(isVideo: false);
+    if (!mounted) return;
+    if (picked != null) {
+      imgCtrl.text = picked;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Image upload ho gayi!')),
+      );
+    }
+  }
+
+  Future<void> _uploadProductVideo() async {
+    final picked = await pickMediaFileFromDevice(isVideo: true);
+    if (!mounted) return;
+    if (picked != null) {
+      videoUrlCtrl.text = picked;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Video attach ho gayi!')),
+      );
+    }
   }
 
   List<ProductVariant> _buildVariants() {
@@ -687,9 +862,20 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
             children: [
               CircleAvatar(radius: 10, backgroundColor: currentSwatch),
               const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.w600),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: blue,
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => _uploadVariantImage(imgCtrl),
+                icon: const Icon(Icons.upload, size: 16),
+                label: const Text('Upload Image'),
               ),
             ],
           ),
@@ -715,7 +901,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   controller: imgCtrl,
                   onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(
-                    labelText: 'Image URL (https://...)',
+                    labelText: 'Image URL ya Uploaded Image',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
@@ -768,6 +954,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     final price = int.tryParse(priceCtrl.text.trim()) ?? 999;
     final mrp = int.tryParse(mrpCtrl.text.trim()) ?? (price + 500);
     final stock = int.tryParse(stockCtrl.text.trim()) ?? 10;
+    final vid = videoUrlCtrl.text.trim();
 
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -799,14 +986,18 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
         primaryImg,
         stock: stock,
         variants: builtVariants,
+        videoUrl: vid.isEmpty ? null : vid,
       ),
     );
     nameCtrl.clear();
+    videoUrlCtrl.clear();
+    saveCatalogToStorage();
+    catalogVersion.value++;
     setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '"$name" (${builtVariants.length} color variants) store mein add ho gaya!',
+          '"$name" (${builtVariants.length} variants) store mein add ho gaya!',
         ),
       ),
     );
@@ -817,7 +1008,9 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     recentlyViewed.removeWhere((item) => item.id == p.id);
     store.wish.remove(p.id);
     store.lines.removeWhere((line) => line.p.id == p.id);
+    saveCatalogToStorage();
     saveStoreToStorage();
+    catalogVersion.value++;
     setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('"${p.name}" store se remove kar diya gaya')),
@@ -946,12 +1139,12 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  'Color Variants & Images',
+                  'Color Variants, Images & Video',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Har color ke liye alag image URL daalein (kisi color ki zaroorat na ho to uska naam/URL khali chhod sakte hain).',
+                  'Har color ke liye image URL daalein ya "Upload Image" se file chunein. Neeche product video bhi upload/link kar sakte hain.',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 8),
@@ -975,6 +1168,49 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   imgCtrl: c3ImgCtrl,
                   currentSwatch: c3Color,
                   onSwatchChange: (col) => c3Color = col,
+                ),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.videocam_outlined, color: blue, size: 20),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Product Video (Optional)',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              foregroundColor: blue,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: _uploadProductVideo,
+                            icon: const Icon(Icons.video_call, size: 18),
+                            label: const Text('Upload Video'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: videoUrlCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Video URL (.mp4) ya Uploaded Video',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 6),
                 SizedBox(
