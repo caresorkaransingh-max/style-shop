@@ -121,18 +121,24 @@ void saveCatalogToStorage() {
   unawaited(syncCatalogToSupabase());
 }
 
-Future<void> syncCatalogToSupabase() async {
+Future<String?> syncCatalogToSupabase() async {
   try {
-    if (products.isEmpty) return;
+    if (products.isEmpty) return null;
     final rows = products
         .map((p) => {'id': p.id, 'data': p.toJson()})
         .toList();
-    await http.post(
+    final res = await http.post(
       Uri.parse('$kSupabaseUrl/rest/v1/store_products'),
       headers: _sbHeaders,
       body: jsonEncode(rows),
     );
-  } catch (_) {}
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return null;
+    }
+    return 'Products sync failed (${res.statusCode}): ${res.body}';
+  } catch (e) {
+    return 'Products sync error: $e';
+  }
 }
 
 Future<void> deleteProductFromSupabase(int productId) async {
@@ -144,18 +150,24 @@ Future<void> deleteProductFromSupabase(int productId) async {
   } catch (_) {}
 }
 
-Future<void> syncOrdersToSupabase() async {
+Future<String?> syncOrdersToSupabase() async {
   try {
-    if (store.orders.isEmpty) return;
+    if (store.orders.isEmpty) return null;
     final rows = store.orders
         .map((o) => {'id': o.id, 'data': o.toJson()})
         .toList();
-    await http.post(
+    final res = await http.post(
       Uri.parse('$kSupabaseUrl/rest/v1/store_orders'),
       headers: _sbHeaders,
       body: jsonEncode(rows),
     );
-  } catch (_) {}
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return null;
+    }
+    return 'Orders sync failed (${res.statusCode}): ${res.body}';
+  } catch (e) {
+    return 'Orders sync error: $e';
+  }
 }
 
 Future<void> deleteOrderFromSupabase(String orderId) async {
@@ -167,7 +179,8 @@ Future<void> deleteOrderFromSupabase(String orderId) async {
   } catch (_) {}
 }
 
-Future<void> fetchFromSupabase() async {
+Future<String?> fetchFromSupabase() async {
+  final errors = <String>[];
   try {
     final prodRes = await http.get(
       Uri.parse('$kSupabaseUrl/rest/v1/store_products?select=id,data&order=id.desc'),
@@ -190,8 +203,11 @@ Future<void> fetchFromSupabase() async {
         );
         catalogVersion.value++;
       } else {
-        await syncCatalogToSupabase();
+        final syncErr = await syncCatalogToSupabase();
+        if (syncErr != null) errors.add(syncErr);
       }
+    } else {
+      errors.add('Products fetch (${prodRes.statusCode}): ${prodRes.body}');
     }
 
     final ordRes = await http.get(
@@ -212,10 +228,16 @@ Future<void> fetchFromSupabase() async {
         _writeStorage(_kStoreKey, jsonEncode(store.toJson()));
         store.notifyListeners();
       } else if (store.orders.isNotEmpty) {
-        await syncOrdersToSupabase();
+        final syncErr = await syncOrdersToSupabase();
+        if (syncErr != null) errors.add(syncErr);
       }
+    } else {
+      errors.add('Orders fetch (${ordRes.statusCode}): ${ordRes.body}');
     }
-  } catch (_) {}
+  } catch (e) {
+    errors.add('Fetch error: $e');
+  }
+  return errors.isEmpty ? null : errors.join(' | ');
 }
 
 Future<void> loadSaved() async {
@@ -452,7 +474,6 @@ void openWhatsAppSupport(BuildContext context, {String? customText}) {
   }
 }
 
-// Downloadable / Printable Order Invoice with GST Breakup
 void downloadOrderInvoice(BuildContext context, Order o) {
   final itemsRows = o.items
       .map(
@@ -1091,7 +1112,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '"$name" Supabase cloud mein save ho gaya!',
+          '"$name" locally save ho gaya; cloud sync background mein chal raha hai.',
         ),
       ),
     );
@@ -1121,11 +1142,15 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
           IconButton(
             tooltip: 'Sync from Supabase',
             onPressed: () async {
-              await fetchFromSupabase();
+              final err = await fetchFromSupabase();
               if (mounted) {
                 setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Supabase data synced!')),
+                  SnackBar(
+                    content: Text(
+                      err == null ? 'Supabase data synced!' : err,
+                    ),
+                  ),
                 );
               }
             },
