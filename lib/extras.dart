@@ -129,11 +129,31 @@ Future<void> upsertProductToSupabase(Product p) async {
     final uri = Uri.parse(
       '$kSupabaseUrl/rest/v1/$kStoreProductsTable?on_conflict=id',
     );
+    final variants = p.effectiveVariants;
+    final allImgs = <String>[];
+    for (final v in variants) {
+      allImgs.addAll(v.images);
+    }
+    if (allImgs.isEmpty && p.img.isNotEmpty) {
+      allImgs.add(p.img);
+    }
     await http.post(
       uri,
       headers: _supabaseHeaders(preferReturn: true),
       body: jsonEncode([
-        {'id': p.id, 'data': p.toJson()},
+        {
+          'id': p.id,
+          'product_name': p.name,
+          'brand': p.brand,
+          'category': p.group,
+          'type_tag': p.tag,
+          'sale_price': p.price,
+          'mrp': p.mrp,
+          'stock': p.stock,
+          'color_variants': variants.map((v) => v.colorName).join(', '),
+          'images': allImgs.join(', '),
+          'data': p.toJson(),
+        },
       ]),
     );
   } catch (_) {}
@@ -948,8 +968,38 @@ class _LoginSignupDialogState extends State<_LoginSignupDialog> {
   }
 }
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
+
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  int _secretTapCount = 0;
+  DateTime? _lastTapTime;
+
+  Future<void> _handleSecretAdminTap() async {
+    final now = DateTime.now();
+    if (_lastTapTime == null ||
+        now.difference(_lastTapTime!) > const Duration(seconds: 2)) {
+      _secretTapCount = 1;
+    } else {
+      _secretTapCount++;
+    }
+    _lastTapTime = now;
+
+    if (_secretTapCount >= 5) {
+      _secretTapCount = 0;
+      final ok = await verifyAdminAccess(context);
+      if (!mounted || !ok) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const AdminPanelPage()),
+      );
+      if (mounted) setState(() {});
+    }
+  }
 
   void _showAddAddressDialog(BuildContext context) {
     final labelC = TextEditingController(text: 'Home');
@@ -1031,7 +1081,15 @@ class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: blueBar('My Account'),
+      appBar: AppBar(
+        backgroundColor: blue,
+        foregroundColor: Colors.white,
+        title: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _handleSecretAdminTap,
+          child: const Text('My Account'),
+        ),
+      ),
       body: ListenableBuilder(
         listenable: profile,
         builder: (context, _) {
@@ -1152,7 +1210,6 @@ class ProfilePage extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-
                     ListTile(
                       leading: const Icon(Icons.support_agent, color: green),
                       title: const Text('24x7 Customer Support'),
