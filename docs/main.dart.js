@@ -28887,7 +28887,7 @@ return s},
 aFs(){var s=0,r=A.M(t.Xx),q,p=2,o=[],n,m,l,k,j,i,h,g,f,e,d,c,b,a
 var $async$aFs=A.N(function(a0,a1){if(a0===1){o.push(a1)
 s=p}for(;;)switch(s){case 0:p=4
-n=A.fy("https://fforcyaoyscgjdbtpvp.supabase.co/rest/v1/store_products?select=id,data&order=id.asc")
+n=A.fy("https://fforcyaoyscgjdbtqpvp.supabase.co/rest/v1/store_products?select=id,data&order=id.asc")
 s=7
 return A.H(A.aJI(n,A.aER(!1)),$async$aFs)
 case 7:m=a1
@@ -28922,7 +28922,7 @@ b62(a){var s=0,r=A.M(t.H),q=1,p=[],o,n,m,l
 var $async$aFe=A.N(function(b,c){if(b===1){p.push(c)
 s=q}for(;;)switch(s){case 0:q=3
 o=A.kk(2,a,B.Y,!1)
-n=A.fy("https://fforcyaoyscgjdbtpvp.supabase.co/rest/v1/store_orders?order_id=eq."+A.k(o))
+n=A.fy("https://fforcyaoyscgjdbtqpvp.supabase.co/rest/v1/store_orders?order_id=eq."+A.k(o))
 s=6
 return A.H(A.aSf(n,A.aER(!1)),$async$aFe)
 case 6:q=1
@@ -28941,7 +28941,7 @@ aEJ(a,b){return A.b4U(a,b)},
 b4U(a,b){var s=0,r=A.M(t.H),q=1,p=[],o,n,m,l
 var $async$aEJ=A.N(function(c,d){if(c===1){p.push(d)
 s=q}for(;;)switch(s){case 0:q=3
-o=A.fy("https://fforcyaoyscgjdbtpvp.supabase.co/rest/v1/store_user_data?on_conflict=user_key")
+o=A.fy("https://fforcyaoyscgjdbtqpvp.supabase.co/rest/v1/store_user_data?on_conflict=user_key")
 n=A.aER(!0)
 s=6
 return A.H(A.b6X(o,B.ab.ju(A.b([A.ao(["user_key",a,"payload",b,"updated_at",new A.e2(Date.now(),0,!1).aBP().a3o()],t.N,t.K)],t.Mq),null),n),$async$aEJ)
@@ -28962,7 +28962,7 @@ b4T(a){var s=0,r=A.M(t.nA),q,p=2,o=[],n,m,l,k,j,i,h,g,f
 var $async$a40=A.N(function(b,c){if(b===1){o.push(c)
 s=p}for(;;)switch(s){case 0:p=4
 n=A.kk(2,a,B.Y,!1)
-m=A.fy("https://fforcyaoyscgjdbtpvp.supabase.co/rest/v1/store_user_data?user_key=eq."+A.k(n)+"&select=payload&limit=1")
+m=A.fy("https://fforcyaoyscgjdbtqpvp.supabase.co/rest/v1/store_user_data?user_key=eq."+A.k(n)+"&select=payload&limit=1")
 s=7
 return A.H(A.aJI(m,A.aER(!1)),$async$a40)
 case 7:l=c

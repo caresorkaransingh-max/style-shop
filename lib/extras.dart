@@ -12,7 +12,7 @@ import 'web_helper_stub.dart'
     if (dart.library.html) 'web_helper_web.dart' as web_helper;
 import 'main.dart';
 
-const String kSupabaseUrl = 'https://fforcyaoyscgjdbtpvp.supabase.co';
+const String kSupabaseUrl = 'https://fforcyaoyscgjdbtqpvp.supabase.co';
 const String kSupabaseAnonKey =
     'sb_publishable_vUttKc25oC5lTNxS8ikaAQ_3gNH3V7g';
 
