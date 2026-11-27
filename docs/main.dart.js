@@ -28877,15 +28877,15 @@ aEC(a){var s=B.d.c7(a),r=A.cK("[^a-z0-9._@-]",!0,!1),q=A.pQ(s.toLowerCase(),r,"_
 return q.length===0?"default_guest_user":q},
 aEM(a){var s=t.N
 s=A.q(s,s)
-s.m(0,"apikey","sb_publishable_q25qEEXZ3Z7-99l5J2o36Q_V1-wX65E")
-s.m(0,"Authorization","Bearer sb_publishable_q25qEEXZ3Z7-99l5J2o36Q_V1-wX65E")
+s.m(0,"apikey","sb_publishable_vUttKc25oC5lTNxS8ikaAQ_3gNH3V7g")
+s.m(0,"Authorization","Bearer sb_publishable_vUttKc25oC5lTNxS8ikaAQ_3gNH3V7g")
 s.m(0,"Content-Type","application/json")
 if(a)s.m(0,"Prefer","return=representation")
 return s},
 aFm(){var s=0,r=A.M(t.Xx),q,p=2,o=[],n,m,l,k,j,i,h,g,f,e,d,c,b
 var $async$aFm=A.N(function(a,a0){if(a===1){o.push(a0)
 s=p}for(;;)switch(s){case 0:p=4
-n=A.fy("https://wubxkmzrlzpqwosbapuy.supabase.co/rest/v1/store_products?select=id,data&order=id.asc")
+n=A.fy("https://fforcyaoyscgjdbtpvp.supabase.co/rest/v1/store_products?select=id,data&order=id.asc")
 s=7
 return A.H(A.aJD(n,A.aEM(!1)),$async$aFm)
 case 7:m=a0
@@ -28917,7 +28917,7 @@ b5T(a){var s=0,r=A.M(t.H),q=1,p=[],o,n,m,l
 var $async$aF9=A.N(function(b,c){if(b===1){p.push(c)
 s=q}for(;;)switch(s){case 0:q=3
 o=A.kk(2,a,B.Y,!1)
-n=A.fy("https://wubxkmzrlzpqwosbapuy.supabase.co/rest/v1/store_orders?order_id=eq."+A.k(o))
+n=A.fy("https://fforcyaoyscgjdbtpvp.supabase.co/rest/v1/store_orders?order_id=eq."+A.k(o))
 s=6
 return A.H(A.aS5(n,A.aEM(!1)),$async$aF9)
 case 6:q=1
@@ -28936,7 +28936,7 @@ aEE(a,b){return A.b4K(a,b)},
 b4K(a,b){var s=0,r=A.M(t.H),q=1,p=[],o,n,m,l
 var $async$aEE=A.N(function(c,d){if(c===1){p.push(d)
 s=q}for(;;)switch(s){case 0:q=3
-o=A.fy("https://wubxkmzrlzpqwosbapuy.supabase.co/rest/v1/store_user_data?on_conflict=user_key")
+o=A.fy("https://fforcyaoyscgjdbtpvp.supabase.co/rest/v1/store_user_data?on_conflict=user_key")
 n=A.aEM(!0)
 s=6
 return A.H(A.b6N(o,B.ab.ju(A.b([A.ao(["user_key",a,"payload",b,"updated_at",new A.e2(Date.now(),0,!1).aBN().a3n()],t.N,t.K)],t.Mq),null),n),$async$aEE)
@@ -28957,7 +28957,7 @@ b4J(a){var s=0,r=A.M(t.nA),q,p=2,o=[],n,m,l,k,j,i,h,g
 var $async$a3Y=A.N(function(b,c){if(b===1){o.push(c)
 s=p}for(;;)switch(s){case 0:p=4
 n=A.kk(2,a,B.Y,!1)
-m=A.fy("https://wubxkmzrlzpqwosbapuy.supabase.co/rest/v1/store_user_data?user_key=eq."+A.k(n)+"&select=payload&limit=1")
+m=A.fy("https://fforcyaoyscgjdbtpvp.supabase.co/rest/v1/store_user_data?user_key=eq."+A.k(n)+"&select=payload&limit=1")
 s=7
 return A.H(A.aJD(m,A.aEM(!1)),$async$a3Y)
 case 7:l=c
