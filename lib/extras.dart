@@ -115,8 +115,12 @@ Future<List<Product>> fetchProductsFromSupabase() async {
         }
       }
       return loaded;
+    } else {
+      debugPrint('Supabase fetchProducts failed: HTTP ${res.statusCode} -> ${res.body}');
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('Supabase fetchProducts error: $e');
+  }
   return [];
 }
 
@@ -194,8 +198,12 @@ Future<Map<String, dynamic>?> _pullUserDataFromSupabase(String userKey) async {
           return Map<String, dynamic>.from(rawPayload);
         }
       }
+    } else {
+      debugPrint('Supabase pullUserData failed: HTTP ${res.statusCode}');
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('Supabase pullUserData error: $e');
+  }
   return null;
 }
 
