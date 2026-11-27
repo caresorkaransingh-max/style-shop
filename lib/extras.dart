@@ -2405,16 +2405,9 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
         body: jsonEncode([
           {
             'id': rowId,
-            'name': name,
             'product_name': name,
             'brand': brand,
-            'category': selectedGroup,
-            'type_tag': selectedTag,
-            'sale_price': price,
-            'mrp': mrp < price ? price : mrp,
-            'stock': stock,
-            'color_variants': selectedColors.join(', '),
-            'images': allImagesList.toSet().join(', '),
+            'price': price,
             'data': productPayload,
           },
         ]),
