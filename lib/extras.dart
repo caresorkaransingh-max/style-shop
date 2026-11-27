@@ -1994,9 +1994,29 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     'Cushion',
   ];
 
+  static const List<String> kClothingSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
+  static const List<String> kFootwearSizes = ['5', '6', '7', '8', '9', '10', '11'];
+
   final Set<String> selectedColors = {'Black'};
+  final Set<String> selectedSizes = {'S', 'M', 'L', 'XL', 'XXL'};
   final Map<String, List<String>> imagesByColor = {};
   String activeImageColor = 'Black';
+
+  bool get _isFootwearCategory {
+    final g = selectedGroup.toLowerCase();
+    final t = selectedTag.toLowerCase();
+    return g.contains('footwear') ||
+        g.contains('shoe') ||
+        g.contains('sandal') ||
+        t.contains('shoe') ||
+        t.contains('sneaker') ||
+        t.contains('heel') ||
+        t.contains('flat') ||
+        t.contains('loafer');
+  }
+
+  List<String> get _availableSizeOptions =>
+      _isFootwearCategory ? kFootwearSizes : kClothingSizes;
 
   List<String> get _allAvailableCategories {
     final set = <String>{...kStoreCategories, ...kExtraCategories};
@@ -2013,6 +2033,11 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
 
   Color _swatchForColor(String name) {
     return kAllColors[name] ?? const Color(0xFF1F2937);
+  }
+
+  void _syncImgUrlFieldForActiveColor() {
+    final list = _activeColorImages;
+    imgUrlC.text = list.isEmpty ? '' : list.join(', ');
   }
 
   @override
@@ -2041,6 +2066,17 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
         selectedColors.add(colorName);
         activeImageColor = colorName;
       }
+      _syncImgUrlFieldForActiveColor();
+    });
+  }
+
+  void _toggleSize(String sz) {
+    setState(() {
+      if (selectedSizes.contains(sz)) {
+        if (selectedSizes.length > 1) selectedSizes.remove(sz);
+      } else {
+        selectedSizes.add(sz);
+      }
     });
   }
 
@@ -2052,7 +2088,6 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       priceC.text = '${p.price}';
       mrpC.text = '${p.mrp}';
       stockC.text = '${p.stock}';
-      imgUrlC.clear();
       videoUrlC.text = p.videoUrl ?? '';
 
       final cats = _allAvailableCategories;
@@ -2074,6 +2109,18 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
         selectedColors.add('Black');
       }
       activeImageColor = selectedColors.first;
+      _syncImgUrlFieldForActiveColor();
+
+      final rawJson = p.toJson();
+      if (rawJson['sizes'] is List && (rawJson['sizes'] as List).isNotEmpty) {
+        selectedSizes
+          ..clear()
+          ..addAll((rawJson['sizes'] as List).map((e) => e.toString()));
+      } else {
+        selectedSizes
+          ..clear()
+          ..addAll(_availableSizeOptions.take(5));
+      }
     });
   }
 
@@ -2092,15 +2139,20 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
         ..add('Black');
       imagesByColor.clear();
       activeImageColor = 'Black';
+      selectedSizes
+        ..clear()
+        ..addAll(_availableSizeOptions.take(5));
     });
   }
 
-  void _addImageUrlToActiveColor() {
-    final url = imgUrlC.text.trim();
-    if (url.isEmpty) return;
+  void _syncTypedUrlsToActiveColor() {
+    final parts = imgUrlC.text
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
     setState(() {
-      _activeColorImages.add(url);
-      imgUrlC.clear();
+      imagesByColor[activeImageColor] = parts;
     });
   }
 
@@ -2131,12 +2183,15 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       }
     }
     if (!mounted) return;
-    setState(() => uploading = false);
+    setState(() {
+      uploading = false;
+      _syncImgUrlFieldForActiveColor();
+    });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           uploadedCount > 0
-              ? '$uploadedCount image(s) $activeImageColor mein upload ho gayi!'
+              ? '$uploadedCount image(s) upload ho kar URL automatic aa gaya!'
               : 'Image upload fail hui — Supabase bucket check karein',
         ),
       ),
@@ -2182,6 +2237,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       return;
     }
 
+    _syncTypedUrlsToActiveColor();
     setState(() => saving = true);
 
     final parsedId = int.tryParse(idC.text.trim());
@@ -2190,11 +2246,6 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     final brand = brandC.text.trim().isEmpty ? 'Style Co' : brandC.text.trim();
     final mrp = int.tryParse(mrpC.text.trim()) ?? price;
     final stock = int.tryParse(stockC.text.trim()) ?? 10;
-
-    if (imgUrlC.text.trim().isNotEmpty) {
-      _activeColorImages.add(imgUrlC.text.trim());
-      imgUrlC.clear();
-    }
 
     String fallbackImg = px(15133974);
     for (final c in selectedColors) {
@@ -2236,6 +2287,9 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       variants: builtVariants,
     );
 
+    final productPayload = product.toJson();
+    productPayload['sizes'] = selectedSizes.toList();
+
     final idx = products.indexWhere((e) => e.id == rowId);
     if (idx >= 0) {
       products[idx] = product;
@@ -2265,7 +2319,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
             'stock': stock,
             'color_variants': selectedColors.join(', '),
             'images': allImagesList.toSet().join(', '),
-            'data': product.toJson(),
+            'data': productPayload,
           },
         ]),
       );
@@ -2314,6 +2368,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
   Widget build(BuildContext context) {
     final categories = _allAvailableCategories;
     final tags = _allAvailableTags;
+    final sizeChoices = _availableSizeOptions;
     return Scaffold(
       appBar: blueBar('store_products Manager'),
       body: ListView(
@@ -2375,7 +2430,14 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                             DropdownMenuItem(value: g, child: Text(g)),
                         ],
                         onChanged: (v) {
-                          if (v != null) setState(() => selectedGroup = v);
+                          if (v != null) {
+                            setState(() {
+                              selectedGroup = v;
+                              selectedSizes
+                                ..clear()
+                                ..addAll(_availableSizeOptions.take(5));
+                            });
+                          }
                         },
                       ),
                     ),
@@ -2395,7 +2457,14 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                             DropdownMenuItem(value: t, child: Text(t)),
                         ],
                         onChanged: (v) {
-                          if (v != null) setState(() => selectedTag = v);
+                          if (v != null) {
+                            setState(() {
+                              selectedTag = v;
+                              selectedSizes
+                                ..clear()
+                                ..addAll(_availableSizeOptions.take(5));
+                            });
+                          }
                         },
                       ),
                     ),
@@ -2444,7 +2513,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'Select Colors (Multiple Select Karein)',
+                      'Select Colors (Flipkart Style Variants)',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                     ),
                     Text(
@@ -2493,8 +2562,48 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   ],
                 ),
                 const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Select Sizes',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    Text(
+                      selectedSizes.join(', '),
+                      style: const TextStyle(
+                        color: blue,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final sz in sizeChoices)
+                      FilterChip(
+                        selected: selectedSizes.contains(sz),
+                        selectedColor: blue.withOpacity(0.16),
+                        checkmarkColor: blue,
+                        label: Text(
+                          sz,
+                          style: TextStyle(
+                            fontWeight: selectedSizes.contains(sz)
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                        onSelected: (_) => _toggleSize(sz),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
                 const Text(
-                  'Upload Product Images (Selected Color ke liye)',
+                  'Color-wise Photos (Har Color ke liye Alag Photos)',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 ),
                 const SizedBox(height: 8),
@@ -2519,49 +2628,44 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                               '$c (${(imagesByColor[c] ?? const []).length})',
                             ),
                             selected: activeImageColor == c,
-                            onSelected: (_) =>
-                                setState(() => activeImageColor = c),
+                            onSelected: (_) {
+                              _syncTypedUrlsToActiveColor();
+                              setState(() {
+                                activeImageColor = c;
+                                _syncImgUrlFieldForActiveColor();
+                              });
+                            },
                           ),
                         ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: blue,
-                          padding: const EdgeInsets.symmetric(vertical: 13),
-                        ),
-                        onPressed: uploading ? null : _pickAndUploadImages,
-                        icon: const Icon(Icons.cloud_upload),
-                        label: Text(
-                          uploading
-                              ? 'Uploading Images...'
-                              : 'Upload Images ($activeImageColor)',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
                       child: TextField(
                         controller: imgUrlC,
+                        onChanged: (_) => _syncTypedUrlsToActiveColor(),
                         decoration: InputDecoration(
-                          labelText: 'Ya Image URL paste karein ($activeImageColor)',
+                          labelText:
+                              'Image URL ($activeImageColor — upload karne par auto aayega)',
                           border: const OutlineInputBorder(),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    OutlinedButton(
-                      onPressed: _addImageUrlToActiveColor,
-                      child: const Text('Add URL'),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: blue,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 15,
+                        ),
+                      ),
+                      onPressed: uploading ? null : _pickAndUploadImages,
+                      icon: const Icon(Icons.upload),
+                      label: Text(uploading ? 'Uploading...' : 'Upload Image'),
                     ),
                   ],
                 ),
@@ -2599,9 +2703,10 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                               right: 4,
                               top: 0,
                               child: GestureDetector(
-                                onTap: () => setState(
-                                  () => _activeColorImages.removeAt(idx),
-                                ),
+                                onTap: () => setState(() {
+                                  _activeColorImages.removeAt(idx);
+                                  _syncImgUrlFieldForActiveColor();
+                                }),
                                 child: const CircleAvatar(
                                   radius: 10,
                                   backgroundColor: Colors.red,
