@@ -245,6 +245,44 @@ class ProfileState extends ChangeNotifier {
   String? loggedInUser;
   String? loggedInEmail;
   String? loggedInPhone;
+  bool isAdminAuthenticated = false;
+  final Map<String, String> _passwordsByUser = {};
+
+  void setAdminAuthenticated(bool val) {
+    isAdminAuthenticated = val;
+    notifyListeners();
+  }
+
+  Future<void> resetUserPassword(String identifier, String newPassword) async {
+    final key = _normalizeUserKey(identifier);
+    _passwordsByUser[key] = newPassword;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('style_shop_passwords_v1', jsonEncode(_passwordsByUser));
+  }
+
+  Future<bool> authenticateUser({
+    required String displayName,
+    String? email,
+    String? phone,
+    required String password,
+    required bool isSignup,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final rawPw = prefs.getString('style_shop_passwords_v1');
+    if (rawPw != null && rawPw.isNotEmpty) {
+      final decoded = jsonDecode(rawPw) as Map;
+      decoded.forEach((k, v) => _passwordsByUser[k.toString()] = v.toString());
+    }
+    final key = _normalizeUserKey(email ?? phone ?? displayName);
+    final savedPass = _passwordsByUser[key];
+    if (!isSignup && savedPass != null && savedPass != password) {
+      return false;
+    }
+    _passwordsByUser[key] = password;
+    await prefs.setString('style_shop_passwords_v1', jsonEncode(_passwordsByUser));
+    await login(displayName, email: email, phone: phone);
+    return true;
+  }
   List<AddressItem> addresses = [
     const AddressItem(
       id: 'addr_default',
@@ -441,12 +479,89 @@ Future<void> loadSaved() async {
   } catch (_) {}
 }
 
+const String kAdminPasscode = 'admin123';
+
 Future<void> openLoginPopup(BuildContext context) async {
   await showDialog<void>(
     context: context,
     barrierDismissible: true,
     builder: (ctx) => const _LoginSignupDialog(),
   );
+}
+
+Future<bool> verifyAdminAccess(BuildContext context) async {
+  if (profile.isAdminAuthenticated) return true;
+  final pinCtrl = TextEditingController();
+  String? errText;
+  bool verified = false;
+
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => StatefulBuilder(
+      builder: (context, setS) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.lock, color: blue),
+            SizedBox(width: 8),
+            Text('Admin Lock'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Only verified admins can access product management.',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pinCtrl,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: 'Admin Passcode',
+                prefixIcon: const Icon(Icons.key),
+                errorText: errText,
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: (_) {
+                if (pinCtrl.text.trim() == kAdminPasscode) {
+                  profile.setAdminAuthenticated(true);
+                  verified = true;
+                  Navigator.pop(ctx);
+                } else {
+                  setS(() => errText = 'Invalid admin passcode');
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: blue),
+            onPressed: () {
+              if (pinCtrl.text.trim() == kAdminPasscode) {
+                profile.setAdminAuthenticated(true);
+                verified = true;
+                Navigator.pop(ctx);
+              } else {
+                setS(() => errText = 'Invalid admin passcode');
+              }
+            },
+            child: const Text('UNLOCK'),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  pinCtrl.dispose();
+  return verified;
 }
 
 class _LoginSignupDialog extends StatefulWidget {
@@ -458,6 +573,7 @@ class _LoginSignupDialog extends StatefulWidget {
 
 class _LoginSignupDialogState extends State<_LoginSignupDialog> {
   bool isSignup = false;
+  bool useEmailField = true;
   final nameCtrl = TextEditingController();
   final emailCtrl = TextEditingController();
   final phoneCtrl = TextEditingController();
@@ -473,6 +589,95 @@ class _LoginSignupDialogState extends State<_LoginSignupDialog> {
     super.dispose();
   }
 
+  Future<void> _openForgotPassword() async {
+    final resetTargetCtrl = TextEditingController(
+      text: emailCtrl.text.trim().isNotEmpty
+          ? emailCtrl.text.trim()
+          : phoneCtrl.text.trim(),
+    );
+    final newPassCtrl = TextEditingController();
+    String? resetErr;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setS) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.lock_reset, color: blue),
+              SizedBox(width: 8),
+              Text('Forgot Password'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Enter your registered Email or Phone Number and set a new password.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: resetTargetCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Email or Phone Number',
+                    prefixIcon: const Icon(Icons.person_search),
+                    errorText: resetErr,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: newPassCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'New Password (min 4 chars)',
+                    prefixIcon: Icon(Icons.lock_outline),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('CANCEL'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: blue),
+              onPressed: () async {
+                final target = resetTargetCtrl.text.trim();
+                final nextPass = newPassCtrl.text.trim();
+                if (target.isEmpty) {
+                  setS(() => resetErr = 'Please enter email or phone number');
+                  return;
+                }
+                if (nextPass.length < 4) {
+                  setS(() => resetErr = 'New password must be at least 4 chars');
+                  return;
+                }
+                await profile.resetUserPassword(target, nextPass);
+                if (!context.mounted) return;
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(
+                    content: Text('Password reset updated for $target'),
+                  ),
+                );
+              },
+              child: const Text('RESET PASSWORD'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    resetTargetCtrl.dispose();
+    newPassCtrl.dispose();
+  }
+
   Future<void> _submit() async {
     final email = emailCtrl.text.trim();
     final phone = phoneCtrl.text.trim();
@@ -484,7 +689,7 @@ class _LoginSignupDialogState extends State<_LoginSignupDialog> {
       return;
     }
     if (email.isEmpty && phone.isEmpty) {
-      setState(() => err = 'Enter email or phone number');
+      setState(() => err = 'Please enter Email or Phone Number');
       return;
     }
     if (pass.length < 4) {
@@ -495,11 +700,20 @@ class _LoginSignupDialogState extends State<_LoginSignupDialog> {
     final displayName = name.isNotEmpty
         ? name
         : (email.isNotEmpty ? email.split('@').first : 'User $phone');
-    await profile.login(
-      displayName,
+
+    final authOk = await profile.authenticateUser(
+      displayName: displayName,
       email: email.isEmpty ? null : email,
       phone: phone.isEmpty ? null : phone,
+      password: pass,
+      isSignup: isSignup,
     );
+
+    if (!authOk) {
+      setState(() => err = 'Incorrect password for this account');
+      return;
+    }
+
     if (!mounted) return;
     Navigator.of(context).pop();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -509,85 +723,219 @@ class _LoginSignupDialogState extends State<_LoginSignupDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Row(
+    final isNarrow = MediaQuery.of(context).size.width < 560;
+    final leftPanel = Container(
+      width: isNarrow ? double.infinity : 210,
+      padding: const EdgeInsets.all(22),
+      color: blue,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Icon(Icons.account_circle, color: blue),
-          const SizedBox(width: 8),
-          Text(isSignup ? 'Create Account' : 'Login to Style Shop'),
-        ],
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isSignup)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Full Name',
-                    prefixIcon: Icon(Icons.person_outline),
-                    border: OutlineInputBorder(),
-                  ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isSignup ? 'Looks like you\'re new here!' : 'Login',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            TextField(
-              controller: emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                prefixIcon: Icon(Icons.email_outlined),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: phoneCtrl,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Phone Number',
-                prefixIcon: Icon(Icons.phone_outlined),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: passCtrl,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                prefixIcon: Icon(Icons.lock_outline),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            if (err != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Text(
-                err!,
-                style: const TextStyle(color: Colors.red, fontSize: 12),
+                isSignup
+                    ? 'Sign up with your details to get started'
+                    : 'Get access to your Orders, Wishlist and Recommendations',
+                style: const TextStyle(
+                  color: Color(0xFFE3ECFF),
+                  fontSize: 13,
+                  height: 1.4,
+                ),
               ),
             ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => setState(() {
-            isSignup = !isSignup;
-            err = null;
-          }),
-          child: Text(
-            isSignup ? 'Already have account? Login' : 'New here? Sign Up',
           ),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: blue),
-          onPressed: _submit,
-          child: Text(isSignup ? 'SIGN UP' : 'LOGIN'),
-        ),
-      ],
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFCA28),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.shopping_bag,
+              color: Color(0xFF1F2937),
+              size: 32,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final rightPanel = Container(
+      width: isNarrow ? double.infinity : 330,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+      color: Colors.white,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                isSignup ? 'Create your account' : 'Log in for the best experience',
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close, color: Colors.black54),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (isSignup) ...[
+            TextField(
+              controller: nameCtrl,
+              style: const TextStyle(color: Colors.black87),
+              decoration: const InputDecoration(
+                labelText: 'Full Name',
+                prefixIcon: Icon(Icons.person_outline, color: blue),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          TextField(
+            controller: emailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            style: const TextStyle(color: Colors.black87),
+            decoration: const InputDecoration(
+              labelText: 'Email',
+              prefixIcon: Icon(Icons.email_outlined, color: blue),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: phoneCtrl,
+            keyboardType: TextInputType.phone,
+            style: const TextStyle(color: Colors.black87),
+            decoration: InputDecoration(
+              labelText: 'Phone Number',
+              prefixIcon: const Icon(Icons.phone_outlined, color: blue),
+              suffixIcon: TextButton(
+                onPressed: () => setState(() => useEmailField = !useEmailField),
+                child: Text(
+                  useEmailField ? 'Use Phone' : 'Use Email',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: passCtrl,
+            obscureText: true,
+            style: const TextStyle(color: Colors.black87),
+            decoration: const InputDecoration(
+              labelText: 'Password',
+              prefixIcon: Icon(Icons.lock_outline, color: blue),
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                minimumSize: const Size(0, 28),
+              ),
+              onPressed: _openForgotPassword,
+              child: const Text(
+                'Forgot Password?',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          if (err != null) ...[
+            Text(
+              err!,
+              style: const TextStyle(color: Colors.red, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+          ],
+          const Text(
+            'By continuing, you agree to Style Shop Terms of Use and Privacy Policy.',
+            style: TextStyle(color: Colors.grey, fontSize: 11),
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: orange,
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            onPressed: _submit,
+            child: Text(
+              isSignup ? 'Sign Up' : 'Continue',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: TextButton(
+              onPressed: () => setState(() {
+                isSignup = !isSignup;
+                err = null;
+              }),
+              child: Text(
+                isSignup
+                    ? 'Existing User? Log in'
+                    : 'New to Style Shop? Create an account',
+                style: const TextStyle(
+                  color: blue,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      child: SingleChildScrollView(
+        child: isNarrow
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [leftPanel, rightPanel],
+              )
+            : IntrinsicHeight(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [leftPanel, rightPanel],
+                ),
+              ),
+      ),
     );
   }
 }
@@ -797,19 +1145,31 @@ class ProfilePage extends StatelessWidget {
                 child: Column(
                   children: [
                     ListTile(
-                      leading:
-                          const Icon(Icons.admin_panel_settings, color: blue),
-                      title: const Text('Admin Panel'),
+                      leading: Icon(
+                        profile.isAdminAuthenticated
+                            ? Icons.admin_panel_settings
+                            : Icons.lock_outline,
+                        color: blue,
+                      ),
+                      title: Text(
+                        profile.isAdminAuthenticated
+                            ? 'Admin Panel (Unlocked)'
+                            : 'Admin Panel (Locked)',
+                      ),
                       subtitle: const Text(
-                        'Add, edit, or remove store products & upload photos/videos',
+                        'Restricted to verified admins with passcode',
                       ),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const AdminPanelPage(),
-                        ),
-                      ),
+                      onTap: () async {
+                        final ok = await verifyAdminAccess(context);
+                        if (!ok || !context.mounted) return;
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AdminPanelPage(),
+                          ),
+                        );
+                      },
                     ),
                     const Divider(height: 1),
                     ListTile(
