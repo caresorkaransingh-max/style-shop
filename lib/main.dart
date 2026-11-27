@@ -18,6 +18,41 @@ const Color orange = Color(0xFFFB641B);
 const Color green = Color(0xFF388E3C);
 const Color bg = Color(0xFFF1F3F6);
 
+const List<String> kStoreCategories = [
+  'Men',
+  'Women',
+  'Kids',
+  'Mobiles',
+  'Electronics',
+  'Home',
+  'Footwear',
+  'Accessories',
+];
+
+const List<String> kProductTypes = [
+  'T-Shirt',
+  'Shirt',
+  'Top',
+  'Jacket',
+  'Denim Jacket',
+  'Hoodie',
+  'Dress',
+  'Midi Dress',
+  'Kurti',
+  'Pant',
+  'Jeans',
+  'Smartphone',
+  'Earbuds',
+  'Headphone',
+  'Laptop',
+  'Smartwatch',
+  'Mug',
+  'Decor',
+  'Shoes',
+  'Bag',
+  'Sunglasses',
+];
+
 final ValueNotifier<int> activeTab = ValueNotifier<int>(0);
 
 void goToHome(BuildContext context) {
@@ -131,7 +166,19 @@ class Product {
   });
 
   int get off => ((mrp - price) * 100 / mrp).round();
-  bool get isCloth => group == 'Men' || group == 'Women';
+  bool get isCloth => const [
+        'T-Shirt',
+        'Shirt',
+        'Top',
+        'Jacket',
+        'Denim Jacket',
+        'Hoodie',
+        'Dress',
+        'Midi Dress',
+        'Kurti',
+        'Pant',
+        'Jeans',
+      ].contains(tag);
 
   List<ProductVariant> get effectiveVariants => variants.isNotEmpty
       ? variants
@@ -160,7 +207,7 @@ class Product {
         (j['id'] ?? 1) as int,
         (j['name'] ?? 'Product').toString(),
         (j['brand'] ?? 'Style Co').toString(),
-        (j['tag'] ?? 'T-Shirt').toString(),
+        (j['tag'] ?? 'Shirt').toString(),
         (j['group'] ?? 'Men').toString(),
         (j['price'] ?? 999) as int,
         (j['mrp'] ?? 1499) as int,
@@ -177,266 +224,7 @@ class Product {
       );
 }
 
-final List<Product> products = [
-  Product(
-    1,
-    'Light Brown Jacket',
-    'Style Co',
-    'Jacket',
-    'Women',
-    3499,
-    5999,
-    4.5,
-    2341,
-    Icons.checkroom,
-    const Color(0xFF8B5E3C),
-    px(15133974),
-    stock: 3,
-    variants: [
-      ProductVariant('Brown', const Color(0xFF8B5E3C), [
-        px(15133974),
-        px(15133972),
-      ]),
-      ProductVariant('Camel', const Color(0xFFC19A6B), [
-        px(15133972),
-        px(756484),
-      ]),
-      ProductVariant('Black', const Color(0xFF222222), [
-        px(1072036),
-        px(15133974),
-      ]),
-    ],
-  ),
-  Product(
-    2,
-    'Checked Blazer',
-    'Urban Wear',
-    'Jacket',
-    'Men',
-    4999,
-    8999,
-    4.7,
-    1876,
-    Icons.checkroom,
-    const Color(0xFFB5651D),
-    px(756484),
-    stock: 7,
-    variants: [
-      ProductVariant('Tan', const Color(0xFFB5651D), [
-        px(756484),
-        px(1072036),
-      ]),
-      ProductVariant('Navy Blue', const Color(0xFF1E3A8A), [
-        px(1072036),
-        px(756484),
-      ]),
-    ],
-  ),
-  Product(
-    3,
-    'Floral Dress',
-    'Bloom',
-    'Dress',
-    'Women',
-    2799,
-    4999,
-    4.4,
-    3120,
-    Icons.woman,
-    const Color(0xFFD4537E),
-    px(4380970),
-    stock: 2,
-    variants: [
-      ProductVariant('Pink', const Color(0xFFD4537E), [
-        px(4380970),
-        px(15133972),
-      ]),
-      ProductVariant('Yellow', const Color(0xFFEAB308), [
-        px(15133972),
-        px(4380970),
-      ]),
-    ],
-  ),
-  Product(
-    4,
-    'Cotton T-Shirt',
-    'Basics',
-    'T-Shirt',
-    'Men',
-    799,
-    1499,
-    4.2,
-    8932,
-    Icons.dry_cleaning,
-    const Color(0xFF1D9E75),
-    px(2379005),
-    stock: 20,
-    variants: [
-      ProductVariant('Green', const Color(0xFF1D9E75), [
-        px(2379005),
-        px(997489),
-      ]),
-      ProductVariant('Maroon', const Color(0xFFA32D2D), [
-        px(997489),
-        px(2379005),
-      ]),
-      ProductVariant('White', const Color(0xFFF5F5F5), [
-        px(991509),
-        px(2379005),
-      ]),
-    ],
-  ),
-  Product(
-    5,
-    'Slim Fit Pant',
-    'Urban Wear',
-    'Pant',
-    'Men',
-    1899,
-    3299,
-    4.3,
-    2210,
-    Icons.man,
-    const Color(0xFF378ADD),
-    px(991509),
-    stock: 3,
-    variants: [
-      ProductVariant('Blue', const Color(0xFF378ADD), [px(991509)]),
-      ProductVariant('Black', const Color(0xFF1F2937), [px(1072036)]),
-    ],
-  ),
-  Product(
-    6,
-    'Summer Dress',
-    'Bloom',
-    'Dress',
-    'Women',
-    2299,
-    3999,
-    4.6,
-    1543,
-    Icons.woman,
-    const Color(0xFFBA7517),
-    px(15133972),
-  ),
-  Product(
-    7,
-    'Denim Jacket',
-    'Blue Denim',
-    'Jacket',
-    'Men',
-    3299,
-    5499,
-    4.5,
-    2987,
-    Icons.checkroom,
-    const Color(0xFF534AB7),
-    px(1072036),
-    variants: [
-      ProductVariant('Indigo', const Color(0xFF534AB7), [
-        px(1072036),
-        px(756484),
-      ]),
-      ProductVariant('Brown', const Color(0xFF8B5E3C), [
-        px(756484),
-        px(1072036),
-      ]),
-    ],
-  ),
-  Product(
-    8,
-    'Basic Tee',
-    'Basics',
-    'T-Shirt',
-    'Men',
-    699,
-    1299,
-    4.1,
-    6410,
-    Icons.dry_cleaning,
-    const Color(0xFFA32D2D),
-    px(997489),
-  ),
-  Product(
-    9,
-    'Smartphone X',
-    'TechOne',
-    'Mobile',
-    'Mobiles',
-    14999,
-    19999,
-    4.4,
-    5210,
-    Icons.smartphone,
-    const Color(0xFF3C5A8B),
-    px(404280),
-    stock: 3,
-    variants: [
-      ProductVariant('Midnight Blue', const Color(0xFF1E3A8A), [px(404280)]),
-      ProductVariant('Graphite Black', const Color(0xFF222222), [px(18105)]),
-    ],
-  ),
-  Product(
-    10,
-    'Wireless Headphones',
-    'SoundMax',
-    'Headphone',
-    'Electronics',
-    1999,
-    3999,
-    4.3,
-    4120,
-    Icons.headphones,
-    const Color(0xFF6B3C8B),
-    px(3394650),
-    variants: [
-      ProductVariant('Purple', const Color(0xFF6B3C8B), [px(3394650)]),
-      ProductVariant('Matte Black', const Color(0xFF1A1A1A), [px(18105)]),
-    ],
-  ),
-  Product(
-    11,
-    'Laptop Pro 14',
-    'TechOne',
-    'Laptop',
-    'Electronics',
-    45999,
-    59999,
-    4.6,
-    1290,
-    Icons.laptop,
-    const Color(0xFF444444),
-    px(18105),
-  ),
-  Product(
-    12,
-    'Study Lamp',
-    'HomeGlow',
-    'Lamp',
-    'Home',
-    899,
-    1599,
-    4.2,
-    980,
-    Icons.lightbulb,
-    const Color(0xFFBA7517),
-    px(1112598),
-  ),
-  Product(
-    13,
-    'Cushion Set',
-    'HomeGlow',
-    'Decor',
-    'Home',
-    1299,
-    2199,
-    4.4,
-    760,
-    Icons.chair,
-    const Color(0xFF1D9E75),
-    px(1866149),
-  ),
-];
+final List<Product> products = [];
 
 Color tint(Color c) => Color.alphaBlend(c.withAlpha(45), Colors.white);
 
@@ -1515,15 +1303,16 @@ class _HomeTabState extends State<HomeTab> {
 
         const cats = [
           'All',
-          'Men',
-          'Women',
-          'Mobiles',
-          'Electronics',
-          'Home',
+          ...kStoreCategories,
+          'Shirt',
+          'Top',
+          'Smartphone',
+          'Earbuds',
+          'Mug',
+          'Denim Jacket',
           'Jacket',
-          'Dress',
-          'T-Shirt',
-          'Pant',
+          'Midi Dress',
+          'Jeans',
         ];
 
         return Scaffold(
@@ -1650,7 +1439,7 @@ class _HomeTabState extends State<HomeTab> {
                               behavior: HitTestBehavior.opaque,
                               onTap: () => pick(c),
                               child: SizedBox(
-                                width: 74,
+                                width: 82,
                                 child: Column(
                                   children: [
                                     Container(
@@ -1667,25 +1456,40 @@ class _HomeTabState extends State<HomeTab> {
                                       ),
                                       padding: const EdgeInsets.all(2),
                                       child: ClipOval(
-                                        child: c == 'All'
-                                            ? Container(
+                                        child: Builder(
+                                          builder: (_) {
+                                            if (c == 'All') {
+                                              return Container(
                                                 color: const Color(0xFFDCE8FD),
                                                 child: const Icon(
                                                   Icons.apps,
                                                   color: blue,
                                                 ),
-                                              )
-                                            : NetImg(
-                                                products.firstWhere(
-                                                  (p) => p.tag == c || p.group == c,
-                                                  orElse: () => products.first,
-                                                ),
+                                              );
+                                            }
+                                            final match = products
+                                                .where((p) => p.tag == c || p.group == c)
+                                                .firstOrNull;
+                                            if (match != null) {
+                                              return NetImg(match);
+                                            }
+                                            return Container(
+                                              color: const Color(0xFFF1F3F6),
+                                              child: const Icon(
+                                                Icons.category_outlined,
+                                                color: blue,
+                                                size: 24,
                                               ),
+                                            );
+                                          },
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
                                       c,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: filter == c
@@ -1892,7 +1696,11 @@ class _HomeTabState extends State<HomeTab> {
                     if (shown.isEmpty)
                       const Padding(
                         padding: EdgeInsets.all(32),
-                        child: Center(child: Text('No products found')),
+                        child: Center(
+                          child: Text(
+                            'No products yet. Add products from Admin Panel.',
+                          ),
+                        ),
                       )
                     else
                       GridView.builder(

@@ -1,561 +1,955 @@
 import 'dart:async';
 import 'dart:convert';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'web_helper_stub.dart'
+    if (dart.library.html) 'web_helper_web.dart' as web_helper;
 import 'main.dart';
 
-const String kSupabaseUrl = 'https://fforcyaoyscgjdbtqpvp.supabase.co';
-const String kSupabaseKey = 'sb_publishable_vUttKc25oC5lTNxS8ikaAQ_3gNH3V7g';
+const String kSupabaseUrl = 'https://wubxkmzrlzpqwosbapuy.supabase.co';
+const String kSupabaseAnonKey =
+    'sb_publishable_q25qEEXZ3Z7-99l5J2o36Q_V1-wX65E';
 
-Map<String, String> get _sbHeaders => {
-      'apikey': kSupabaseKey,
-      'Content-Type': 'application/json',
-      'Prefer': 'resolution=merge-duplicates,return=minimal',
-    };
+const String kStoreDataTable = 'store_user_data';
+const String kStoreProductsTable = 'store_products';
+const String kStoreOrdersTable = 'store_orders';
+const String kProductImagesBucket = 'product-images';
+const String kDefaultStoreUserKey = 'default_guest_user';
 
-class SavedAddress {
-  final String label;
-  final String name;
-  final String address;
-  final String pin;
+String _activeStoreUserKey = kDefaultStoreUserKey;
 
-  const SavedAddress({
-    required this.label,
-    required this.name,
-    required this.address,
-    required this.pin,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'label': label,
-        'name': name,
-        'address': address,
-        'pin': pin,
-      };
-
-  factory SavedAddress.fromJson(Map<String, dynamic> j) => SavedAddress(
-        label: (j['label'] ?? 'Home').toString(),
-        name: (j['name'] ?? '').toString(),
-        address: (j['address'] ?? '').toString(),
-        pin: (j['pin'] ?? '').toString(),
-      );
+String _normalizeUserKey(String raw) {
+  final clean = raw.trim().toLowerCase().replaceAll(
+    RegExp(r'[^a-z0-9._@-]'),
+    '_',
+  );
+  return clean.isEmpty ? kDefaultStoreUserKey : clean;
 }
 
-class UserProfile {
-  String name;
-  String address;
-  String pin;
-  String? loggedInUser;
-  List<SavedAddress> addresses;
-
-  UserProfile({
-    this.name = '',
-    this.address = '',
-    this.pin = '',
-    this.loggedInUser,
-    List<SavedAddress>? addresses,
-  }) : addresses = addresses ?? [];
-
-  Map<String, dynamic> toJson() => {
-        'name': name,
-        'address': address,
-        'pin': pin,
-        'loggedInUser': loggedInUser,
-        'addresses': addresses.map((e) => e.toJson()).toList(),
-      };
-
-  factory UserProfile.fromJson(Map<String, dynamic> j) => UserProfile(
-        name: (j['name'] ?? '').toString(),
-        address: (j['address'] ?? '').toString(),
-        pin: (j['pin'] ?? '').toString(),
-        loggedInUser: j['loggedInUser']?.toString(),
-        addresses: ((j['addresses'] as List?) ?? [])
-            .map((e) => SavedAddress.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList(),
-      );
+Map<String, String> _supabaseHeaders({bool preferReturn = false}) {
+  return {
+    'apikey': kSupabaseAnonKey,
+    'Authorization': 'Bearer $kSupabaseAnonKey',
+    'Content-Type': 'application/json',
+    if (preferReturn) 'Prefer': 'return=representation',
+  };
 }
 
-final UserProfile profile = UserProfile();
-final List<Product> recentlyViewed = [];
+String _mimeFromFileName(String fileName) {
+  final lower = fileName.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.bmp')) return 'image/bmp';
+  if (lower.endsWith('.mp4')) return 'video/mp4';
+  if (lower.endsWith('.webm')) return 'video/webm';
+  if (lower.endsWith('.mov')) return 'video/quicktime';
+  if (lower.endsWith('.m4v')) return 'video/x-m4v';
+  if (lower.endsWith('.ogg')) return 'video/ogg';
+  return 'image/jpeg';
+}
 
-const String _kStoreKey = 'styleshop_store_v1';
-const String _kProfileKey = 'styleshop_profile_v1';
-const String _kDarkKey = 'styleshop_dark_v1';
-const String _kCustomProductsKey = 'styleshop_custom_products_v1';
+String _extFromFileName(String fileName) {
+  final dot = fileName.lastIndexOf('.');
+  if (dot == -1 || dot == fileName.length - 1) return 'jpg';
+  return fileName
+      .substring(dot + 1)
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]'), '');
+}
 
-void _writeStorage(String key, String value) {
+Future<String?> uploadMediaBytesToSupabase({
+  required Uint8List bytes,
+  required String fileName,
+  String folder = 'products',
+}) async {
   try {
-    html.window.localStorage[key] = value;
-  } catch (_) {}
-}
-
-String? _readStorage(String key) {
-  try {
-    return html.window.localStorage[key];
+    final ext = _extFromFileName(fileName);
+    final safeExt = ext.isEmpty ? 'bin' : ext;
+    final objectPath =
+        '$folder/${DateTime.now().millisecondsSinceEpoch}_${bytes.length}.$safeExt';
+    final uri = Uri.parse(
+      '$kSupabaseUrl/storage/v1/object/$kProductImagesBucket/$objectPath',
+    );
+    final res = await http.post(
+      uri,
+      headers: {
+        'apikey': kSupabaseAnonKey,
+        'Authorization': 'Bearer $kSupabaseAnonKey',
+        'Content-Type': _mimeFromFileName(fileName),
+        'x-upsert': 'true',
+      },
+      body: bytes,
+    );
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return '$kSupabaseUrl/storage/v1/object/public/$kProductImagesBucket/$objectPath';
+    }
+    return null;
   } catch (_) {
     return null;
   }
 }
 
-void saveDarkMode(bool enabled) {
-  _writeStorage(_kDarkKey, enabled.toString());
-}
-
-void saveProfileToStorage() {
-  _writeStorage(_kProfileKey, jsonEncode(profile.toJson()));
-}
-
-void saveStoreToStorage() {
-  _writeStorage(_kStoreKey, jsonEncode(store.toJson()));
-  unawaited(syncOrdersToSupabase());
-}
-
-void saveCatalogToStorage() {
+Future<List<Product>> fetchProductsFromSupabase() async {
   try {
-    final encoded = jsonEncode(products.map((p) => p.toJson()).toList());
-    _writeStorage(_kCustomProductsKey, encoded);
-  } catch (_) {}
-  unawaited(syncCatalogToSupabase());
-}
-
-Future<String?> syncCatalogToSupabase() async {
-  try {
-    if (products.isEmpty) return null;
-    final rows = products
-        .map((p) => {'id': p.id, 'data': p.toJson()})
-        .toList();
-    final res = await http.post(
-      Uri.parse('$kSupabaseUrl/rest/v1/store_products?on_conflict=id'),
-      headers: _sbHeaders,
-      body: jsonEncode(rows),
+    final uri = Uri.parse(
+      '$kSupabaseUrl/rest/v1/$kStoreProductsTable?select=id,data&order=id.asc',
     );
+    final res = await http.get(uri, headers: _supabaseHeaders());
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      return null;
+      final list = jsonDecode(res.body) as List;
+      final loaded = <Product>[];
+      for (final row in list) {
+        if (row is Map && row['data'] != null) {
+          final rawData = row['data'];
+          final map = rawData is String
+              ? Map<String, dynamic>.from(jsonDecode(rawData) as Map)
+              : Map<String, dynamic>.from(rawData as Map);
+          loaded.add(Product.fromJson(map));
+        }
+      }
+      return loaded;
     }
-    return 'Products sync failed (${res.statusCode}): ${res.body}';
-  } catch (e) {
-    return 'Products sync error: $e';
-  }
+  } catch (_) {}
+  return [];
+}
+
+Future<void> upsertProductToSupabase(Product p) async {
+  try {
+    final uri = Uri.parse(
+      '$kSupabaseUrl/rest/v1/$kStoreProductsTable?on_conflict=id',
+    );
+    await http.post(
+      uri,
+      headers: _supabaseHeaders(preferReturn: true),
+      body: jsonEncode([
+        {'id': p.id, 'data': p.toJson()},
+      ]),
+    );
+  } catch (_) {}
 }
 
 Future<void> deleteProductFromSupabase(int productId) async {
   try {
-    await http.delete(
-      Uri.parse('$kSupabaseUrl/rest/v1/store_products?id=eq.$productId'),
-      headers: _sbHeaders,
+    final uri = Uri.parse(
+      '$kSupabaseUrl/rest/v1/$kStoreProductsTable?id=eq.$productId',
     );
+    await http.delete(uri, headers: _supabaseHeaders());
   } catch (_) {}
-}
-
-Future<String?> syncOrdersToSupabase() async {
-  try {
-    if (store.orders.isEmpty) return null;
-    final rows = store.orders
-        .map((o) => {'id': o.id, 'data': o.toJson()})
-        .toList();
-    final res = await http.post(
-      Uri.parse('$kSupabaseUrl/rest/v1/store_orders?on_conflict=id'),
-      headers: _sbHeaders,
-      body: jsonEncode(rows),
-    );
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      return null;
-    }
-    return 'Orders sync failed (${res.statusCode}): ${res.body}';
-  } catch (e) {
-    return 'Orders sync error: $e';
-  }
 }
 
 Future<void> deleteOrderFromSupabase(String orderId) async {
   try {
-    await http.delete(
-      Uri.parse('$kSupabaseUrl/rest/v1/store_orders?id=eq.$orderId'),
-      headers: _sbHeaders,
+    final encodedId = Uri.encodeComponent(orderId);
+    final uri = Uri.parse(
+      '$kSupabaseUrl/rest/v1/$kStoreOrdersTable?order_id=eq.$encodedId',
+    );
+    await http.delete(uri, headers: _supabaseHeaders());
+  } catch (_) {}
+}
+
+Future<void> _pushUserDataToSupabase(
+  String userKey,
+  Map<String, dynamic> payload,
+) async {
+  try {
+    final uri = Uri.parse(
+      '$kSupabaseUrl/rest/v1/$kStoreDataTable?on_conflict=user_key',
+    );
+    await http.post(
+      uri,
+      headers: _supabaseHeaders(preferReturn: true),
+      body: jsonEncode([
+        {
+          'user_key': userKey,
+          'payload': payload,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        },
+      ]),
     );
   } catch (_) {}
 }
 
-Future<String?> fetchFromSupabase() async {
-  final errors = <String>[];
+Future<Map<String, dynamic>?> _pullUserDataFromSupabase(String userKey) async {
   try {
-    final prodRes = await http.get(
-      Uri.parse('$kSupabaseUrl/rest/v1/store_products?select=id,data&order=id.desc'),
-      headers: _sbHeaders,
+    final encoded = Uri.encodeComponent(userKey);
+    final uri = Uri.parse(
+      '$kSupabaseUrl/rest/v1/$kStoreDataTable?user_key=eq.$encoded&select=payload&limit=1',
     );
-    if (prodRes.statusCode == 200) {
-      final list = jsonDecode(prodRes.body) as List;
-      if (list.isNotEmpty) {
-        final cloudProducts = list
-            .map((row) => Product.fromJson(
-                  Map<String, dynamic>.from((row as Map)['data'] as Map),
-                ))
-            .toList();
-        products
-          ..clear()
-          ..addAll(cloudProducts);
-        _writeStorage(
-          _kCustomProductsKey,
-          jsonEncode(products.map((p) => p.toJson()).toList()),
-        );
-        catalogVersion.value++;
-      } else {
-        final syncErr = await syncCatalogToSupabase();
-        if (syncErr != null) errors.add(syncErr);
+    final res = await http.get(uri, headers: _supabaseHeaders());
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final rows = jsonDecode(res.body) as List;
+      if (rows.isNotEmpty && rows.first is Map) {
+        final rawPayload = (rows.first as Map)['payload'];
+        if (rawPayload is String) {
+          return Map<String, dynamic>.from(jsonDecode(rawPayload) as Map);
+        }
+        if (rawPayload is Map) {
+          return Map<String, dynamic>.from(rawPayload);
+        }
       }
-    } else {
-      errors.add('Products fetch (${prodRes.statusCode}): ${prodRes.body}');
+    }
+  } catch (_) {}
+  return null;
+}
+
+class AddressItem {
+  final String id;
+  final String label;
+  final String fullName;
+  final String phone;
+  final String line1;
+  final String city;
+  final String pincode;
+
+  const AddressItem({
+    required this.id,
+    required this.label,
+    required this.fullName,
+    required this.phone,
+    required this.line1,
+    required this.city,
+    required this.pincode,
+  });
+
+  String get summary => '$fullName ($phone) • $line1, $city - $pincode';
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'label': label,
+        'fullName': fullName,
+        'phone': phone,
+        'line1': line1,
+        'city': city,
+        'pincode': pincode,
+      };
+
+  factory AddressItem.fromJson(Map<String, dynamic> j) => AddressItem(
+        id: (j['id'] ?? '').toString(),
+        label: (j['label'] ?? 'Home').toString(),
+        fullName: (j['fullName'] ?? '').toString(),
+        phone: (j['phone'] ?? '').toString(),
+        line1: (j['line1'] ?? '').toString(),
+        city: (j['city'] ?? '').toString(),
+        pincode: (j['pincode'] ?? '').toString(),
+      );
+}
+
+class ProfileState extends ChangeNotifier {
+  String? loggedInUser;
+  String? loggedInEmail;
+  String? loggedInPhone;
+  List<AddressItem> addresses = [
+    const AddressItem(
+      id: 'addr_default',
+      label: 'Home',
+      fullName: 'Guest Shopper',
+      phone: '9876543210',
+      line1: '12 MG Road',
+      city: 'Bengaluru',
+      pincode: '560001',
+    ),
+  ];
+  String selectedAddressId = 'addr_default';
+
+  AddressItem get activeAddress => addresses.firstWhere(
+        (a) => a.id == selectedAddressId,
+        orElse: () => addresses.first,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'loggedInUser': loggedInUser,
+        'loggedInEmail': loggedInEmail,
+        'loggedInPhone': loggedInPhone,
+        'addresses': addresses.map((a) => a.toJson()).toList(),
+        'selectedAddressId': selectedAddressId,
+      };
+
+  void loadFromJson(Map<String, dynamic> j) {
+    loggedInUser = j['loggedInUser']?.toString();
+    loggedInEmail = j['loggedInEmail']?.toString();
+    loggedInPhone = j['loggedInPhone']?.toString();
+    final list = ((j['addresses'] as List?) ?? [])
+        .map((e) => AddressItem.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+    if (list.isNotEmpty) {
+      addresses = list;
+    }
+    selectedAddressId =
+        (j['selectedAddressId'] ?? addresses.first.id).toString();
+    notifyListeners();
+  }
+
+  Future<void> login(String name, {String? email, String? phone}) async {
+    final cleanName = name.trim().isEmpty ? 'Shopper' : name.trim();
+    loggedInUser = cleanName;
+    loggedInEmail = email?.trim().isEmpty == true ? null : email?.trim();
+    loggedInPhone = phone?.trim().isEmpty == true ? null : phone?.trim();
+    _activeStoreUserKey = _normalizeUserKey(
+      loggedInEmail ?? loggedInPhone ?? cleanName,
+    );
+
+    final cloudData = await _pullUserDataFromSupabase(_activeStoreUserKey);
+    if (cloudData != null) {
+      if (cloudData['store'] is Map) {
+        store.loadFromJson(
+          Map<String, dynamic>.from(cloudData['store'] as Map),
+        );
+      }
+      if (cloudData['profile'] is Map) {
+        final pMap = Map<String, dynamic>.from(cloudData['profile'] as Map);
+        final cloudAddrs = ((pMap['addresses'] as List?) ?? [])
+            .map(
+              (e) => AddressItem.fromJson(Map<String, dynamic>.from(e as Map)),
+            )
+            .toList();
+        if (cloudAddrs.isNotEmpty) {
+          addresses = cloudAddrs;
+          selectedAddressId =
+              (pMap['selectedAddressId'] ?? cloudAddrs.first.id).toString();
+        }
+      }
     }
 
-    final ordRes = await http.get(
-      Uri.parse('$kSupabaseUrl/rest/v1/store_orders?select=id,data&order=created_at.desc'),
-      headers: _sbHeaders,
-    );
-    if (ordRes.statusCode == 200) {
-      final list = jsonDecode(ordRes.body) as List;
-      if (list.isNotEmpty) {
-        final cloudOrders = list
-            .map((row) => Order.fromJson(
-                  Map<String, dynamic>.from((row as Map)['data'] as Map),
-                ))
-            .toList();
-        store.orders
-          ..clear()
-          ..addAll(cloudOrders);
-        _writeStorage(_kStoreKey, jsonEncode(store.toJson()));
-        store.notifyListeners();
-      } else if (store.orders.isNotEmpty) {
-        final syncErr = await syncOrdersToSupabase();
-        if (syncErr != null) errors.add(syncErr);
-      }
-    } else {
-      errors.add('Orders fetch (${ordRes.statusCode}): ${ordRes.body}');
-    }
-  } catch (e) {
-    errors.add('Fetch error: $e');
+    await saveStoreToStorage();
+    notifyListeners();
   }
-  return errors.isEmpty ? null : errors.join(' | ');
+
+  Future<void> logout() async {
+    await saveStoreToStorage();
+    loggedInUser = null;
+    loggedInEmail = null;
+    loggedInPhone = null;
+    _activeStoreUserKey = kDefaultStoreUserKey;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('style_shop_profile_v1');
+    notifyListeners();
+  }
+
+  void addAddress(AddressItem item) {
+    addresses.add(item);
+    selectedAddressId = item.id;
+    saveStoreToStorage();
+    notifyListeners();
+  }
+
+  void selectAddress(String id) {
+    selectedAddressId = id;
+    saveStoreToStorage();
+    notifyListeners();
+  }
+}
+
+final ProfileState profile = ProfileState();
+
+Future<void> saveStoreToStorage() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final storeJson = store.toJson();
+    final profileJson = profile.toJson();
+    await prefs.setString('style_shop_store_v1', jsonEncode(storeJson));
+    await prefs.setString('style_shop_profile_v1', jsonEncode(profileJson));
+
+    final productsJson = products.map((p) => p.toJson()).toList();
+    await prefs.setString('style_shop_products_v1', jsonEncode(productsJson));
+
+    unawaited(
+      _pushUserDataToSupabase(_activeStoreUserKey, {
+        'store': storeJson,
+        'profile': profileJson,
+      }),
+    );
+  } catch (_) {}
+}
+
+Future<void> saveDarkMode(bool isDark) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('style_shop_dark_v1', isDark);
+  } catch (_) {}
 }
 
 Future<void> loadSaved() async {
   try {
-    html.document.title = 'Style Shop';
+    final prefs = await SharedPreferences.getInstance();
+    darkMode.value = prefs.getBool('style_shop_dark_v1') ?? false;
 
-    final darkRaw = _readStorage(_kDarkKey);
-    if (darkRaw == 'true') darkMode.value = true;
-    if (darkRaw == 'false') darkMode.value = false;
-
-    final cRaw = _readStorage(_kCustomProductsKey);
-    if (cRaw != null && cRaw.isNotEmpty) {
-      final decodedList = jsonDecode(cRaw) as List;
-      final loadedProducts = decodedList
+    final rawProducts = prefs.getString('style_shop_products_v1');
+    if (rawProducts != null && rawProducts.isNotEmpty) {
+      final list = jsonDecode(rawProducts) as List;
+      final parsed = list
           .map((e) => Product.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
-      if (loadedProducts.isNotEmpty) {
-        products
-          ..clear()
-          ..addAll(loadedProducts);
+      products
+        ..clear()
+        ..addAll(parsed);
+      catalogVersion.value++;
+    }
+
+    final cloudProducts = await fetchProductsFromSupabase();
+    if (cloudProducts.isNotEmpty) {
+      products
+        ..clear()
+        ..addAll(cloudProducts);
+      await prefs.setString(
+        'style_shop_products_v1',
+        jsonEncode(products.map((p) => p.toJson()).toList()),
+      );
+      catalogVersion.value++;
+    }
+
+    final rawProfile = prefs.getString('style_shop_profile_v1');
+    if (rawProfile != null && rawProfile.isNotEmpty) {
+      profile.loadFromJson(
+        Map<String, dynamic>.from(jsonDecode(rawProfile) as Map),
+      );
+      if (profile.loggedInUser != null) {
+        _activeStoreUserKey = _normalizeUserKey(
+          profile.loggedInEmail ??
+              profile.loggedInPhone ??
+              profile.loggedInUser!,
+        );
       }
     }
 
-    final pRaw = _readStorage(_kProfileKey);
-    if (pRaw != null && pRaw.isNotEmpty) {
-      final decoded = jsonDecode(pRaw) as Map<String, dynamic>;
-      final loaded = UserProfile.fromJson(decoded);
-      profile.name = loaded.name;
-      profile.address = loaded.address;
-      profile.pin = loaded.pin;
-      profile.loggedInUser = loaded.loggedInUser;
-      profile.addresses = loaded.addresses;
+    final rawStore = prefs.getString('style_shop_store_v1');
+    if (rawStore != null && rawStore.isNotEmpty) {
+      store.loadFromJson(
+        Map<String, dynamic>.from(jsonDecode(rawStore) as Map),
+      );
     }
 
-    final sRaw = _readStorage(_kStoreKey);
-    if (sRaw != null && sRaw.isNotEmpty) {
-      store.loadFromJson(jsonDecode(sRaw) as Map<String, dynamic>);
+    final cloudUserData = await _pullUserDataFromSupabase(_activeStoreUserKey);
+    if (cloudUserData != null) {
+      if (cloudUserData['store'] is Map) {
+        store.loadFromJson(
+          Map<String, dynamic>.from(cloudUserData['store'] as Map),
+        );
+      }
+      if (cloudUserData['profile'] is Map) {
+        profile.loadFromJson(
+          Map<String, dynamic>.from(cloudUserData['profile'] as Map),
+        );
+      }
     }
-
-    await fetchFromSupabase();
   } catch (_) {}
 }
 
-Future<String?> pickMediaFileFromDevice({required bool isVideo}) async {
-  final completer = Completer<String?>();
-  try {
-    final input = html.FileUploadInputElement()
-      ..accept = isVideo ? 'video/*' : 'image/*';
-    input.click();
+Future<void> openLoginPopup(BuildContext context) async {
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    builder: (ctx) => const _LoginSignupDialog(),
+  );
+}
 
-    input.onChange.listen((_) {
-      final file = input.files?.isNotEmpty == true ? input.files!.first : null;
-      if (file == null) {
-        if (!completer.isCompleted) completer.complete(null);
-        return;
-      }
+class _LoginSignupDialog extends StatefulWidget {
+  const _LoginSignupDialog();
 
-      if (isVideo) {
-        final blobUrl = html.Url.createObjectUrlFromBlob(file);
-        if (!completer.isCompleted) completer.complete(blobUrl);
-        return;
-      }
+  @override
+  State<_LoginSignupDialog> createState() => _LoginSignupDialogState();
+}
 
-      final reader = html.FileReader();
-      reader.onLoadEnd.listen((_) {
-        final res = reader.result?.toString();
-        if (!completer.isCompleted) {
-          completer.complete((res != null && res.isNotEmpty) ? res : null);
-        }
-      });
-      reader.onError.listen((_) {
-        if (!completer.isCompleted) completer.complete(null);
-      });
-      reader.readAsDataUrl(file);
-    });
+class _LoginSignupDialogState extends State<_LoginSignupDialog> {
+  bool isSignup = false;
+  final nameCtrl = TextEditingController();
+  final emailCtrl = TextEditingController();
+  final phoneCtrl = TextEditingController();
+  final passCtrl = TextEditingController();
+  String? err;
 
-    Future.delayed(const Duration(seconds: 60), () {
-      if (!completer.isCompleted) completer.complete(null);
-    });
-  } catch (_) {
-    if (!completer.isCompleted) completer.complete(null);
+  @override
+  void dispose() {
+    nameCtrl.dispose();
+    emailCtrl.dispose();
+    phoneCtrl.dispose();
+    passCtrl.dispose();
+    super.dispose();
   }
-  return completer.future;
-}
 
-bool isVideoMediaUrl(String url) {
-  final lower = url.toLowerCase();
-  return lower.startsWith('data:video/') ||
-      lower.contains('.mp4') ||
-      lower.contains('.webm') ||
-      lower.contains('.ogg') ||
-      lower.contains('.mov') ||
-      lower.contains('blob:');
-}
+  Future<void> _submit() async {
+    final email = emailCtrl.text.trim();
+    final phone = phoneCtrl.text.trim();
+    final pass = passCtrl.text.trim();
+    final name = nameCtrl.text.trim();
 
-class WebVideoPlayer extends StatelessWidget {
-  final String url;
-  final double height;
-  const WebVideoPlayer({super.key, required this.url, this.height = 320});
+    if (isSignup && name.isEmpty) {
+      setState(() => err = 'Please enter your full name');
+      return;
+    }
+    if (email.isEmpty && phone.isEmpty) {
+      setState(() => err = 'Enter email or phone number');
+      return;
+    }
+    if (pass.length < 4) {
+      setState(() => err = 'Password must be at least 4 characters');
+      return;
+    }
+
+    final displayName = name.isNotEmpty
+        ? name
+        : (email.isNotEmpty ? email.split('@').first : 'User $phone');
+    await profile.login(
+      displayName,
+      email: email.isEmpty ? null : email,
+      phone: phone.isEmpty ? null : phone,
+    );
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Welcome, ${profile.loggedInUser}!')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.black87,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return AlertDialog(
+      title: Row(
         children: [
-          const Icon(Icons.play_circle_fill, color: Colors.white, size: 64),
-          const SizedBox(height: 10),
-          const Text(
-            'Product Video Attached',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
+          const Icon(Icons.account_circle, color: blue),
+          const SizedBox(width: 8),
+          Text(isSignup ? 'Create Account' : 'Login to Style Shop'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isSignup)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name',
+                    prefixIcon: Icon(Icons.person_outline),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            TextField(
+              controller: emailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                prefixIcon: Icon(Icons.email_outlined),
+                border: OutlineInputBorder(),
+              ),
             ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: phoneCtrl,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Phone Number',
+                prefixIcon: Icon(Icons.phone_outlined),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: passCtrl,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Password',
+                prefixIcon: Icon(Icons.lock_outline),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (err != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                err!,
+                style: const TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => setState(() {
+            isSignup = !isSignup;
+            err = null;
+          }),
+          child: Text(
+            isSignup ? 'Already have account? Login' : 'New here? Sign Up',
           ),
-          const SizedBox(height: 6),
-          Text(
-            url,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: blue),
+          onPressed: _submit,
+          child: Text(isSignup ? 'SIGN UP' : 'LOGIN'),
+        ),
+      ],
+    );
+  }
+}
+
+class ProfilePage extends StatelessWidget {
+  const ProfilePage({super.key});
+
+  void _showAddAddressDialog(BuildContext context) {
+    final labelC = TextEditingController(text: 'Home');
+    final nameC = TextEditingController(text: profile.loggedInUser ?? '');
+    final phoneC = TextEditingController(text: profile.loggedInPhone ?? '');
+    final line1C = TextEditingController();
+    final cityC = TextEditingController();
+    final pinC = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Delivery Address'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: labelC,
+                decoration:
+                    const InputDecoration(labelText: 'Label (Home/Office)'),
+              ),
+              TextField(
+                controller: nameC,
+                decoration: const InputDecoration(labelText: 'Full Name'),
+              ),
+              TextField(
+                controller: phoneC,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'Phone'),
+              ),
+              TextField(
+                controller: line1C,
+                decoration:
+                    const InputDecoration(labelText: 'House / Street / Area'),
+              ),
+              TextField(
+                controller: cityC,
+                decoration: const InputDecoration(labelText: 'City'),
+              ),
+              TextField(
+                controller: pinC,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Pincode'),
+              ),
+            ],
           ),
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: blue),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
             onPressed: () {
-              try {
-                html.window.open(url, '_blank');
-              } catch (_) {}
+              if (nameC.text.trim().isEmpty || line1C.text.trim().isEmpty) {
+                return;
+              }
+              profile.addAddress(
+                AddressItem(
+                  id: 'addr_${DateTime.now().millisecondsSinceEpoch}',
+                  label: labelC.text.trim().isEmpty ? 'Home' : labelC.text.trim(),
+                  fullName: nameC.text.trim(),
+                  phone: phoneC.text.trim(),
+                  line1: line1C.text.trim(),
+                  city: cityC.text.trim(),
+                  pincode: pinC.text.trim(),
+                ),
+              );
+              Navigator.pop(ctx);
             },
-            icon: const Icon(Icons.open_in_new, size: 18),
-            label: const Text('OPEN VIDEO IN PLAYER'),
+            child: const Text('SAVE'),
           ),
         ],
       ),
     );
   }
-}
 
-void handleDeepLinkIfAny(BuildContext context) {
-  try {
-    final uri = Uri.parse(html.window.location.href);
-    final rawId = uri.queryParameters['product'] ?? uri.queryParameters['p'];
-    final pid = int.tryParse((rawId ?? '').trim());
-    if (pid == null) return;
-    final target = products.where((p) => p.id == pid).firstOrNull;
-    if (target != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) {
-          openProduct(context, target);
-        }
-      });
-    }
-  } catch (_) {}
-}
-
-void rememberAddress(
-  String name,
-  String address,
-  String pin, {
-  String label = 'Home',
-}) {
-  final cleanName = name.trim();
-  final cleanAddr = address.trim();
-  final cleanPin = pin.trim();
-
-  profile.name = cleanName;
-  profile.address = cleanAddr;
-  profile.pin = cleanPin;
-
-  if (cleanName.isNotEmpty && cleanAddr.isNotEmpty && cleanPin.isNotEmpty) {
-    final existingIdx = profile.addresses.indexWhere(
-      (a) => a.address == cleanAddr && a.pin == cleanPin,
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: blueBar('My Account'),
+      body: ListenableBuilder(
+        listenable: profile,
+        builder: (context, _) {
+          final loggedIn = profile.loggedInUser != null;
+          return ListView(
+            padding: const EdgeInsets.all(12),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: card(context),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: blue,
+                      child: Text(
+                        (profile.loggedInUser ?? 'G')[0].toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            loggedIn ? profile.loggedInUser! : 'Guest Shopper',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (profile.loggedInEmail != null)
+                            Text(
+                              profile.loggedInEmail!,
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 13,
+                              ),
+                            ),
+                          if (profile.loggedInPhone != null)
+                            Text(
+                              profile.loggedInPhone!,
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 13,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (loggedIn)
+                      OutlinedButton(
+                        onPressed: () => profile.logout(),
+                        child: const Text('Logout'),
+                      )
+                    else
+                      FilledButton(
+                        style: FilledButton.styleFrom(backgroundColor: blue),
+                        onPressed: () => openLoginPopup(context),
+                        child: const Text('Login'),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: card(context),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Saved Addresses',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => _showAddAddressDialog(context),
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Add'),
+                        ),
+                      ],
+                    ),
+                    for (final a in profile.addresses)
+                      RadioListTile<String>(
+                        value: a.id,
+                        groupValue: profile.selectedAddressId,
+                        onChanged: (v) {
+                          if (v != null) profile.selectAddress(v);
+                        },
+                        title: Text('${a.label} • ${a.fullName}'),
+                        subtitle: Text('${a.line1}, ${a.city} - ${a.pincode}'),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: card(context),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading:
+                          const Icon(Icons.admin_panel_settings, color: blue),
+                      title: const Text('Admin Panel'),
+                      subtitle: const Text(
+                        'Add, edit, or remove store products & upload photos/videos',
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AdminPanelPage(),
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.support_agent, color: green),
+                      title: const Text('24x7 Customer Support'),
+                      subtitle: const Text('Chat with support assistant'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => openSupportChat(context),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
-    final item = SavedAddress(
-      label: label.trim().isEmpty ? 'Home' : label.trim(),
-      name: cleanName,
-      address: cleanAddr,
-      pin: cleanPin,
-    );
-    if (existingIdx >= 0) {
-      profile.addresses[existingIdx] = item;
-    } else {
-      profile.addresses.insert(0, item);
-      if (profile.addresses.length > 5) profile.addresses.removeLast();
-    }
   }
-  saveProfileToStorage();
 }
 
-void addRecent(Product p) {
-  recentlyViewed.removeWhere((item) => item.id == p.id);
-  recentlyViewed.insert(0, p);
-  if (recentlyViewed.length > 8) {
-    recentlyViewed.removeLast();
-  }
+class CheckoutPage extends StatefulWidget {
+  const CheckoutPage({super.key});
+
+  @override
+  State<CheckoutPage> createState() => _CheckoutPageState();
 }
 
-String buildProductShareLink(Product p) {
-  final base = html.window.location.href.split('?').first.split('#').first;
-  final cleanBase = base.endsWith('/') ? base : '$base/';
-  return '${cleanBase}?product=${p.id}';
-}
+class _CheckoutPageState extends State<CheckoutPage> {
+  String pay = 'UPI';
 
-void shareProductLink(BuildContext context, Product p) {
-  final link = buildProductShareLink(p);
-  try {
-    html.window.navigator.clipboard?.writeText(link);
-  } catch (_) {}
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('Link copied: $link')),
-  );
-}
-
-void openWhatsAppSupport(BuildContext context, {String? customText}) {
-  final text = Uri.encodeComponent(
-    customText ?? 'Hello Style Shop Support, I need assistance with my order.',
-  );
-  final url = 'https://wa.me/919999999999?text=$text';
-  try {
-    html.window.open(url, '_blank');
-  } catch (_) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('WhatsApp link opened in browser')),
-    );
-  }
-}
-
-void downloadOrderInvoice(BuildContext context, Order o) {
-  final itemsRows = o.items
-      .map(
-        (item) =>
-            '<tr><td style="padding:8px;border-bottom:1px solid #eee;">$item</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">Included</td></tr>',
-      )
-      .join();
-  final customerName = profile.name.isNotEmpty
-      ? profile.name
-      : (profile.loggedInUser ?? 'Valued Customer');
-  final customerAddr = profile.address.isNotEmpty
-      ? '${profile.address} - ${profile.pin}'
-      : 'Style Shop Customer Address';
-
-  final baseAmount = (o.total / 1.18).round();
-  final gstAmount = o.total - baseAmount;
-  final cgst = (gstAmount / 2).toStringAsFixed(2);
-  final sgst = (gstAmount - double.parse(cgst)).toStringAsFixed(2);
-
-  final htmlContent = '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Invoice - ${o.id}</title>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 28px; color: #222; max-width: 720px; margin: auto; }
-    .hdr { display: flex; justify-content: space-between; border-bottom: 2px solid #2874F0; padding-bottom: 12px; margin-bottom: 20px; }
-    .brand { font-size: 24px; font-weight: bold; color: #2874F0; }
-    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-    th { text-align: left; background: #f4f6fa; padding: 10px; border-bottom: 2px solid #ddd; }
-    .summary { margin-top: 18px; margin-left: auto; width: 280px; }
-    .summary div { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
-    .total { font-size: 18px; font-weight: bold; border-top: 2px solid #222; padding-top: 8px !important; margin-top: 6px; }
-    .btn { margin-top: 24px; padding: 10px 18px; background: #2874F0; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
-    @media print { .btn { display: none; } }
-  </style>
-</head>
-<body>
-  <div class="hdr">
-    <div>
-      <div class="brand">Style Shop</div>
-      <div>Tax / GST Order Invoice</div>
-    </div>
-    <div style="text-align:right;">
-      <div><strong>Order ID:</strong> ${o.id}</div>
-      <div><strong>Status:</strong> ${o.statusLabel}</div>
-      <div><strong>Date:</strong> ${o.time.toString().split('.').first}</div>
-    </div>
-  </div>
-  <div>
-    <strong>Billed To:</strong> $customerName<br/>
-    <strong>Address:</strong> $customerAddr
-  </div>
-  <table>
-    <thead>
-      <tr><th>Item Description</th><th style="text-align:right;">Details</th></tr>
-    </thead>
-    <tbody>$itemsRows</tbody>
-  </table>
-  <div class="summary">
-    <div><span>Taxable Value:</span><span>₹$baseAmount</span></div>
-    <div><span>CGST (9%):</span><span>₹$cgst</span></div>
-    <div><span>SGST (9%):</span><span>₹$sgst</span></div>
-    <div><span>Delivery:</span><span>FREE</span></div>
-    <div class="total"><span>Grand Total:</span><span>₹${o.total}</span></div>
-  </div>
-  <button class="btn" onclick="window.print()">Print / Save as PDF</button>
-</body>
-</html>
-''';
-
-  try {
-    final blob = html.Blob([htmlContent], 'text/html');
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    html.window.open(url, '_blank');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('GST Invoice opened for ${o.id} (Print / Save PDF)')),
-    );
-  } catch (_) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Could not open invoice window')),
+  @override
+  Widget build(BuildContext context) {
+    final addr = profile.activeAddress;
+    return Scaffold(
+      appBar: blueBar('Checkout'),
+      body: ListenableBuilder(
+        listenable: store,
+        builder: (context, _) => ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              color: card(context),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'DELIVERY ADDRESS',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${addr.label} • ${addr.fullName} (${addr.phone})',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Text('${addr.line1}, ${addr.city} - ${addr.pincode}'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(14),
+              color: card(context),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'PAYMENT METHOD',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  for (final m in [
+                    'UPI',
+                    'Credit / Debit Card',
+                    'Cash on Delivery',
+                  ])
+                    RadioListTile<String>(
+                      value: m,
+                      groupValue: pay,
+                      onChanged: (v) {
+                        if (v != null) setState(() => pay = v);
+                      },
+                      title: Text(m),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            const CouponBox(),
+            Container(
+              padding: const EdgeInsets.all(14),
+              color: card(context),
+              child: Column(
+                children: [
+                  priceRow('Items (${store.count})', '₹${store.mrpTotal}'),
+                  priceRow(
+                    'Discount',
+                    '- ₹${store.mrpTotal - store.subTotal}',
+                    color: green,
+                  ),
+                  if (store.couponOff > 0)
+                    priceRow(
+                      'Coupon (${store.coupon})',
+                      '- ₹${store.couponOff}',
+                      color: green,
+                    ),
+                  priceRow('Delivery', 'FREE', color: green),
+                  const Divider(),
+                  priceRow('Payable Amount', '₹${store.total}', bold: true),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: orange,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              onPressed: () {
+                final id = store.placeOrder();
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SuccessPage(orderId: id, pay: pay),
+                  ),
+                );
+              },
+              child: const Text(
+                'CONFIRM ORDER',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -570,41 +964,153 @@ int couponValue(String? code, int subTotal) {
   if (code == null || subTotal <= 0) return 0;
   final c = code.trim().toUpperCase();
   if (c == 'SAVE10') return (subTotal * 0.10).round();
-  if (c == 'FLAT200') return subTotal >= 200 ? 200 : subTotal;
+  if (c == 'FLAT200') return subTotal >= 500 ? 200 : 0;
   if (c == 'WELCOME') return (subTotal * 0.15).round().clamp(0, 500);
   return 0;
 }
 
-void showSizeChartDialog(BuildContext context, Product p) {
-  showDialog(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text('${p.name} - Size Chart'),
-      content: SingleChildScrollView(
-        child: DataTable(
-          columnSpacing: 16,
-          columns: const [
-            DataColumn(label: Text('Size')),
-            DataColumn(label: Text('Chest')),
-            DataColumn(label: Text('Length')),
-          ],
-          rows: const [
-            DataRow(cells: [DataCell(Text('S')), DataCell(Text('38 in')), DataCell(Text('26 in'))]),
-            DataRow(cells: [DataCell(Text('M')), DataCell(Text('40 in')), DataCell(Text('27 in'))]),
-            DataRow(cells: [DataCell(Text('L')), DataCell(Text('42 in')), DataCell(Text('28 in'))]),
-            DataRow(cells: [DataCell(Text('XL')), DataCell(Text('44 in')), DataCell(Text('29 in'))]),
-            DataRow(cells: [DataCell(Text('XXL')), DataCell(Text('46 in')), DataCell(Text('30 in'))]),
-          ],
+class SaleTimer extends StatefulWidget {
+  const SaleTimer({super.key});
+
+  @override
+  State<SaleTimer> createState() => _SaleTimerState();
+}
+
+class _SaleTimerState extends State<SaleTimer> {
+  Duration rem = const Duration(hours: 3, minutes: 42, seconds: 19);
+  Timer? t;
+
+  @override
+  void initState() {
+    super.initState();
+    t = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        if (rem.inSeconds > 0) {
+          rem -= const Duration(seconds: 1);
+        } else {
+          rem = const Duration(hours: 4);
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final h = rem.inHours.toString().padLeft(2, '0');
+    final m = (rem.inMinutes % 60).toString().padLeft(2, '0');
+    final s = (rem.inSeconds % 60).toString().padLeft(2, '0');
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Text(
+        'Ends in $h:$m:$s',
+        style: const TextStyle(
+          color: orange,
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('CLOSE'),
-        ),
-      ],
-    ),
-  );
+    );
+  }
+}
+
+final ValueNotifier<List<Product>> _recentNotifier =
+    ValueNotifier<List<Product>>([]);
+
+void addRecent(Product p) {
+  final current = List<Product>.from(_recentNotifier.value)
+    ..removeWhere((e) => e.id == p.id)
+    ..insert(0, p);
+  if (current.length > 8) {
+    current.removeRange(8, current.length);
+  }
+  _recentNotifier.value = current;
+}
+
+class RecentlyViewed extends StatelessWidget {
+  const RecentlyViewed({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<List<Product>>(
+      valueListenable: _recentNotifier,
+      builder: (context, items, _) {
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Container(
+          color: card(context),
+          margin: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'Recently Viewed',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 185,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  children: [
+                    for (final p in items)
+                      GestureDetector(
+                        onTap: () => openProduct(context, p),
+                        child: Container(
+                          width: 120,
+                          margin: const EdgeInsets.only(right: 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: NetImg(p),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                p.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                '₹${p.price}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 class SimilarProductsSection extends StatelessWidget {
@@ -615,19 +1121,18 @@ class SimilarProductsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final similar = products
         .where(
-          (item) =>
-              item.id != currentProduct.id &&
-              (item.group == currentProduct.group || item.tag == currentProduct.tag),
+          (p) =>
+              p.id != currentProduct.id &&
+              (p.tag == currentProduct.tag || p.group == currentProduct.group),
         )
         .take(6)
         .toList();
-
     if (similar.isEmpty) return const SizedBox.shrink();
 
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.symmetric(vertical: 14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: card(context),
         borderRadius: BorderRadius.circular(10),
@@ -635,34 +1140,22 @@ class SimilarProductsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'Similar Products',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
+          const Text(
+            'Similar Products',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),
           SizedBox(
             height: 205,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
                 for (final p in similar)
                   GestureDetector(
-                    onTap: () {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (_) {
-                          addRecent(p);
-                          return DetailPage(product: p);
-                        }),
-                      );
-                    },
+                    onTap: () => openProduct(context, p),
                     child: Container(
                       width: 135,
-                      margin: const EdgeInsets.only(right: 12),
+                      margin: const EdgeInsets.only(right: 10),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -680,30 +1173,11 @@ class SimilarProductsSection extends StatelessWidget {
                             p.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
-                          Row(
-                            children: [
-                              Text(
-                                '₹${p.price}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '${p.off}% off',
-                                style: const TextStyle(
-                                  color: green,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
+                          Text(
+                            '₹${p.price}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ],
                       ),
@@ -718,130 +1192,271 @@ class SimilarProductsSection extends StatelessWidget {
   }
 }
 
-class SaleTimer extends StatefulWidget {
-  const SaleTimer({super.key});
-
-  @override
-  State<SaleTimer> createState() => _SaleTimerState();
+void showSizeChartDialog(BuildContext context, Product p) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text('${p.tag} Size Chart'),
+      content: SingleChildScrollView(
+        child: DataTable(
+          columnSpacing: 14,
+          columns: const [
+            DataColumn(label: Text('Size')),
+            DataColumn(label: Text('Chest')),
+            DataColumn(label: Text('Length')),
+          ],
+          rows: const [
+            DataRow(cells: [
+              DataCell(Text('S')),
+              DataCell(Text('38"')),
+              DataCell(Text('27"')),
+            ]),
+            DataRow(cells: [
+              DataCell(Text('M')),
+              DataCell(Text('40"')),
+              DataCell(Text('28"')),
+            ]),
+            DataRow(cells: [
+              DataCell(Text('L')),
+              DataCell(Text('42"')),
+              DataCell(Text('29"')),
+            ]),
+            DataRow(cells: [
+              DataCell(Text('XL')),
+              DataCell(Text('44"')),
+              DataCell(Text('30"')),
+            ]),
+            DataRow(cells: [
+              DataCell(Text('XXL')),
+              DataCell(Text('46"')),
+              DataCell(Text('31"')),
+            ]),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('CLOSE'),
+        ),
+      ],
+    ),
+  );
 }
 
-class _SaleTimerState extends State<SaleTimer> {
-  Duration left = const Duration(hours: 3, minutes: 45, seconds: 30);
-  Timer? t;
+void shareProductLink(BuildContext context, Product p) {
+  final link = '${Uri.base.origin}${Uri.base.path}?product=${p.id}';
+  Clipboard.setData(ClipboardData(text: link));
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Product link copied: $link')),
+  );
+}
+
+void handleDeepLinkIfAny(BuildContext context) {
+  final rawId = Uri.base.queryParameters['product'];
+  final pid = int.tryParse(rawId ?? '');
+  if (pid == null) return;
+  final match = products.where((e) => e.id == pid).firstOrNull;
+  if (match != null) {
+    openProduct(context, match);
+  }
+}
+
+void downloadOrderInvoice(BuildContext context, Order o) {
+  final buf = StringBuffer()
+    ..writeln('STYLE SHOP - ORDER INVOICE')
+    ..writeln('Order ID: ${o.id}')
+    ..writeln('Status: ${o.statusLabel}')
+    ..writeln('Items:')
+    ..writeln(o.items.map((e) => ' - $e').join('\n'))
+    ..writeln('Total Paid: ₹${o.total}');
+  if (kIsWeb) {
+    web_helper.downloadTextFile('${o.id}_invoice.txt', buf.toString());
+  }
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text('Invoice • ${o.id}'),
+      content: SingleChildScrollView(child: Text(buf.toString())),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Clipboard.setData(ClipboardData(text: buf.toString()));
+            Navigator.pop(ctx);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Invoice copied to clipboard')),
+            );
+          },
+          child: const Text('COPY'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('CLOSE'),
+        ),
+      ],
+    ),
+  );
+}
+
+class WebVideoPlayer extends StatelessWidget {
+  final String url;
+  final double height;
+  const WebVideoPlayer({super.key, required this.url, this.height = 300});
 
   @override
-  void initState() {
-    super.initState();
-    t = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() {
-        if (left.inSeconds > 0) {
-          left -= const Duration(seconds: 1);
-        }
-      });
+  Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return SizedBox(
+        height: height,
+        width: double.infinity,
+        child: web_helper.buildPlatformVideoPlayer(url, height),
+      );
+    }
+    return Container(
+      height: height,
+      width: double.infinity,
+      color: Colors.black87,
+      alignment: Alignment.center,
+      child: Text(
+        'Video preview: $url',
+        style: const TextStyle(color: Colors.white),
+      ),
+    );
+  }
+}
+
+void openSupportChat(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    builder: (ctx) => const _SupportChatSheet(),
+  );
+}
+
+class _SupportChatSheet extends StatefulWidget {
+  const _SupportChatSheet();
+
+  @override
+  State<_SupportChatSheet> createState() => _SupportChatSheetState();
+}
+
+class _SupportChatSheetState extends State<_SupportChatSheet> {
+  final msgCtrl = TextEditingController();
+  final List<(bool isUser, String text)> messages = [
+    (
+      false,
+      'Hi! Welcome to Style Shop support. Ask me about orders, returns, coupons, or delivery.',
+    ),
+  ];
+
+  void _send(String text) {
+    final clean = text.trim();
+    if (clean.isEmpty) return;
+    msgCtrl.clear();
+    final lower = clean.toLowerCase();
+    String reply =
+        'Thanks for reaching out! You can track orders in the Orders tab or use coupons SAVE10 / FLAT200 / WELCOME at checkout.';
+    if (lower.contains('order') || lower.contains('track')) {
+      reply =
+          'Open the Orders tab and tap TRACK ORDER on any order to see live delivery progress.';
+    } else if (lower.contains('return') || lower.contains('refund')) {
+      reply =
+          'Delivered orders are eligible for a 7-day easy return from the Orders tab.';
+    } else if (lower.contains('coupon') || lower.contains('discount')) {
+      reply =
+          'Try SAVE10 (10% off), FLAT200 (₹200 off above ₹500), or WELCOME (15% off up to ₹500).';
+    }
+    setState(() {
+      messages.add((true, clean));
+      messages.add((false, reply));
     });
   }
 
   @override
   void dispose() {
-    t?.cancel();
+    msgCtrl.dispose();
     super.dispose();
   }
 
-  String _two(int n) => n.toString().padLeft(2, '0');
-
   @override
   Widget build(BuildContext context) {
-    final h = _two(left.inHours);
-    final m = _two(left.inMinutes.remainder(60));
-    final s = _two(left.inSeconds.remainder(60));
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Row(
-        children: [
-          const Icon(Icons.bolt, color: orange, size: 18),
-          const SizedBox(width: 4),
-          Text(
-            'Ends in $h:$m:$s',
-            style: const TextStyle(
-              color: orange,
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-          ),
-        ],
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        left: 12,
+        right: 12,
+        top: 12,
       ),
-    );
-  }
-}
-
-class RecentlyViewed extends StatelessWidget {
-  const RecentlyViewed({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    if (recentlyViewed.isEmpty) return const SizedBox.shrink();
-    return Container(
-      color: card(context),
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              'Recently Viewed',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 175,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: SizedBox(
+        height: 420,
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                for (final p in recentlyViewed)
-                  GestureDetector(
-                    onTap: () => openProduct(context, p),
-                    child: Container(
-                      width: 115,
-                      margin: const EdgeInsets.only(right: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: NetImg(p),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            p.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          Text(
-                            '₹${p.price}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                const Text(
+                  'Customer Support',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
               ],
             ),
-          ),
-        ],
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                itemCount: messages.length,
+                itemBuilder: (_, i) {
+                  final (isUser, text) = messages[i];
+                  return Align(
+                    alignment:
+                        isUser ? Alignment.centerRight : Alignment.centerLeft,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isUser ? blue : Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        text,
+                        style: TextStyle(
+                          color: isUser ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: msgCtrl,
+                    decoration: const InputDecoration(
+                      hintText: 'Type your message...',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: _send,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  style: IconButton.styleFrom(backgroundColor: blue),
+                  onPressed: () => _send(msgCtrl.text),
+                  icon: const Icon(Icons.send, color: Colors.white),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
@@ -855,309 +1470,254 @@ class AdminPanelPage extends StatefulWidget {
 }
 
 class _AdminPanelPageState extends State<AdminPanelPage> {
-  final nameCtrl = TextEditingController();
-  final brandCtrl = TextEditingController(text: 'Style Co');
-  final priceCtrl = TextEditingController(text: '1499');
-  final mrpCtrl = TextEditingController(text: '2499');
-  final stockCtrl = TextEditingController(text: '10');
-  final videoUrlCtrl = TextEditingController();
-
-  final c1NameCtrl = TextEditingController(text: 'Black');
-  final c1ImgCtrl = TextEditingController(text: px(1072036));
-  Color c1Color = const Color(0xFF222222);
-
-  final c2NameCtrl = TextEditingController(text: 'Brown');
-  final c2ImgCtrl = TextEditingController(text: px(15133974));
-  Color c2Color = const Color(0xFF8B5E3C);
-
-  final c3NameCtrl = TextEditingController(text: 'Blue');
-  final c3ImgCtrl = TextEditingController(text: px(991509));
-  Color c3Color = const Color(0xFF378ADD);
+  int? editingId;
+  final nameC = TextEditingController();
+  final brandC = TextEditingController();
+  final priceC = TextEditingController();
+  final mrpC = TextEditingController();
+  final stockC = TextEditingController(text: '10');
+  final videoUrlC = TextEditingController();
 
   String selectedGroup = 'Men';
-  String selectedTag = 'T-Shirt';
+  String selectedTag = 'Shirt';
 
-  static const List<(String, Color)> _colorPresets = [
-    ('Black', Color(0xFF222222)),
-    ('White', Color(0xFFF5F5F5)),
-    ('Brown', Color(0xFF8B5E3C)),
-    ('Blue', Color(0xFF378ADD)),
-    ('Navy', Color(0xFF1E3A8A)),
-    ('Red', Color(0xFFA32D2D)),
-    ('Pink', Color(0xFFD4537E)),
-    ('Green', Color(0xFF1D9E75)),
-    ('Yellow', Color(0xFFEAB308)),
+  final List<String> colorNames = [
+    'Black',
+    'White',
+    'Blue',
+    'Red',
+    'Green',
+    'Brown',
+    'Pink',
   ];
+  final List<Color> colorSwatches = [
+    const Color(0xFF1F2937),
+    const Color(0xFFF3F4F6),
+    const Color(0xFF2563EB),
+    const Color(0xFFDC2626),
+    const Color(0xFF16A34A),
+    const Color(0xFF8B5E3C),
+    const Color(0xFFEC4899),
+  ];
+
+  int selectedColorIdx = 0;
+  final Map<int, List<String>> variantImages = {};
+  final imgUrlC = TextEditingController();
+  bool uploadingMedia = false;
+
+  List<String> get _currentImages =>
+      variantImages.putIfAbsent(selectedColorIdx, () => <String>[]);
 
   @override
   void dispose() {
-    nameCtrl.dispose();
-    brandCtrl.dispose();
-    priceCtrl.dispose();
-    mrpCtrl.dispose();
-    stockCtrl.dispose();
-    videoUrlCtrl.dispose();
-    c1NameCtrl.dispose();
-    c1ImgCtrl.dispose();
-    c2NameCtrl.dispose();
-    c2ImgCtrl.dispose();
-    c3NameCtrl.dispose();
-    c3ImgCtrl.dispose();
+    nameC.dispose();
+    brandC.dispose();
+    priceC.dispose();
+    mrpC.dispose();
+    stockC.dispose();
+    videoUrlC.dispose();
+    imgUrlC.dispose();
     super.dispose();
   }
 
-  Future<void> _uploadVariantImage(TextEditingController imgCtrl) async {
-    final picked = await pickMediaFileFromDevice(isVideo: false);
-    if (!mounted) return;
-    if (picked != null) {
-      imgCtrl.text = picked;
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image uploaded successfully!')),
-      );
-    }
-  }
-
-  Future<void> _uploadProductVideo() async {
-    final picked = await pickMediaFileFromDevice(isVideo: true);
-    if (!mounted) return;
-    if (picked != null) {
-      videoUrlCtrl.text = picked;
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Video attached successfully!')),
-      );
-    }
-  }
-
-  List<ProductVariant> _buildVariants() {
-    final list = <ProductVariant>[];
-    final entries = [
-      (c1NameCtrl.text.trim(), c1ImgCtrl.text.trim(), c1Color),
-      (c2NameCtrl.text.trim(), c2ImgCtrl.text.trim(), c2Color),
-      (c3NameCtrl.text.trim(), c3ImgCtrl.text.trim(), c3Color),
-    ];
-
-    for (final (cName, imgUrl, swatch) in entries) {
-      if (cName.isNotEmpty || imgUrl.isNotEmpty) {
-        list.add(
-          ProductVariant(
-            cName.isEmpty ? 'Color ${list.length + 1}' : cName,
-            swatch,
-            [imgUrl.isEmpty ? px(15133974) : imgUrl],
-          ),
+  void _startEdit(Product p) {
+    setState(() {
+      editingId = p.id;
+      nameC.text = p.name;
+      brandC.text = p.brand;
+      priceC.text = '${p.price}';
+      mrpC.text = '${p.mrp}';
+      stockC.text = '${p.stock}';
+      videoUrlC.text = p.videoUrl ?? '';
+      selectedGroup = kStoreCategories.contains(p.group)
+          ? p.group
+          : kStoreCategories.first;
+      selectedTag =
+          kProductTypes.contains(p.tag) ? p.tag : kProductTypes.first;
+      variantImages.clear();
+      for (final v in p.effectiveVariants) {
+        final idx = colorNames.indexWhere(
+          (c) => c.toLowerCase() == v.colorName.toLowerCase(),
         );
+        final targetIdx = idx >= 0 ? idx : 0;
+        variantImages[targetIdx] = List<String>.from(v.images);
+      }
+      selectedColorIdx = 0;
+    });
+  }
+
+  void _clearForm() {
+    setState(() {
+      editingId = null;
+      nameC.clear();
+      brandC.clear();
+      priceC.clear();
+      mrpC.clear();
+      stockC.text = '10';
+      videoUrlC.clear();
+      imgUrlC.clear();
+      variantImages.clear();
+      selectedColorIdx = 0;
+    });
+  }
+
+  void _addImageUrl() {
+    final u = imgUrlC.text.trim();
+    if (u.isEmpty) return;
+    setState(() {
+      _currentImages.add(u);
+      imgUrlC.clear();
+    });
+  }
+
+  Future<void> _pickAndUploadImages() async {
+    final dynamic picker = FilePicker;
+    final dynamic res = await picker.pickFiles(
+      type: FileType.image,
+      allowMultiple: true,
+      withData: true,
+    );
+    if (res == null) return;
+    final List<dynamic> pickedFiles = (res.files as List?) ?? const [];
+    if (pickedFiles.isEmpty) return;
+    setState(() => uploadingMedia = true);
+    for (final f in pickedFiles) {
+      final Uint8List? bytes = f.bytes as Uint8List?;
+      if (bytes == null || bytes.isEmpty) continue;
+      final url = await uploadMediaBytesToSupabase(
+        bytes: bytes,
+        fileName: f.name,
+        folder: 'products',
+      );
+      if (url != null) {
+        _currentImages.add(url);
       }
     }
-
-    if (list.isEmpty) {
-      list.add(ProductVariant('Default', c1Color, [px(15133974)]));
-    }
-    return list;
+    if (!mounted) return;
+    setState(() => uploadingMedia = false);
   }
 
-  Widget _variantInputCard({
-    required String title,
-    required TextEditingController colorCtrl,
-    required TextEditingController imgCtrl,
-    required Color currentSwatch,
-    required ValueChanged<Color> onSwatchChange,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(radius: 10, backgroundColor: currentSwatch),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-              TextButton.icon(
-                style: TextButton.styleFrom(
-                  foregroundColor: blue,
-                  visualDensity: VisualDensity.compact,
-                ),
-                onPressed: () => _uploadVariantImage(imgCtrl),
-                icon: const Icon(Icons.upload, size: 16),
-                label: const Text('Upload Image'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: colorCtrl,
-                  onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
-                    labelText: 'Color Name (e.g. Red)',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 3,
-                child: TextField(
-                  controller: imgCtrl,
-                  onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
-                    labelText: 'Image URL or Uploaded Image',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final preset in _colorPresets)
-                GestureDetector(
-                  onTap: () {
-                    colorCtrl.text = preset.$1;
-                    onSwatchChange(preset.$2);
-                    setState(() {});
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: currentSwatch == preset.$2
-                            ? blue
-                            : Colors.grey.shade300,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircleAvatar(radius: 6, backgroundColor: preset.$2),
-                        const SizedBox(width: 4),
-                        Text(preset.$1, style: const TextStyle(fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
+  Future<void> _pickAndUploadVideo() async {
+    final dynamic picker = FilePicker;
+    final dynamic res = await picker.pickFiles(
+      type: FileType.video,
+      allowMultiple: false,
+      withData: true,
     );
+    if (res == null) return;
+    final List<dynamic> pickedFiles = (res.files as List?) ?? const [];
+    if (pickedFiles.isEmpty) return;
+    final dynamic f = pickedFiles.first;
+    final Uint8List? bytes = f.bytes as Uint8List?;
+    if (bytes == null || bytes.isEmpty) return;
+    setState(() => uploadingMedia = true);
+    final url = await uploadMediaBytesToSupabase(
+      bytes: bytes,
+      fileName: f.name,
+      folder: 'videos',
+    );
+    if (!mounted) return;
+    setState(() {
+      uploadingMedia = false;
+      if (url != null) videoUrlC.text = url;
+    });
   }
 
-  void _addProduct() {
-    final name = nameCtrl.text.trim();
-    final brand = brandCtrl.text.trim().isEmpty ? 'Style Co' : brandCtrl.text.trim();
-    final price = int.tryParse(priceCtrl.text.trim()) ?? 999;
-    final mrp = int.tryParse(mrpCtrl.text.trim()) ?? (price + 500);
-    final stock = int.tryParse(stockCtrl.text.trim()) ?? 10;
-    final vid = videoUrlCtrl.text.trim();
+  Future<void> _saveProduct() async {
+    final name = nameC.text.trim();
+    final brand = brandC.text.trim().isEmpty ? 'Style Co' : brandC.text.trim();
+    final price = int.tryParse(priceC.text.trim()) ?? 0;
+    final mrp = int.tryParse(mrpC.text.trim()) ?? price;
+    final stock = int.tryParse(stockC.text.trim()) ?? 10;
 
-    if (name.isEmpty) {
+    if (name.isEmpty || price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a product name')),
+        const SnackBar(
+          content: Text('Please enter product name and valid price'),
+        ),
       );
       return;
     }
 
-    final builtVariants = _buildVariants();
-    final primaryImg = builtVariants.first.images.first;
-    final primaryColor = builtVariants.first.swatch;
-    final nextId =
-        (products.map((e) => e.id).fold(0, (a, b) => a > b ? a : b)) + 1;
+    final builtVariants = <ProductVariant>[];
+    variantImages.forEach((cIdx, imgs) {
+      if (imgs.isNotEmpty) {
+        builtVariants.add(
+          ProductVariant(
+            colorNames[cIdx],
+            colorSwatches[cIdx],
+            List<String>.from(imgs),
+          ),
+        );
+      }
+    });
 
-    products.insert(
-      0,
-      Product(
-        nextId,
-        name,
-        brand,
-        selectedTag,
-        selectedGroup,
-        price,
-        mrp < price ? price + 400 : mrp,
-        4.5,
-        120,
-        Icons.shopping_bag,
-        primaryColor,
-        primaryImg,
-        stock: stock,
-        variants: builtVariants,
-        videoUrl: vid.isEmpty ? null : vid,
-      ),
+    final primaryImg = builtVariants.isNotEmpty
+        ? builtVariants.first.images.first
+        : px(15133974);
+    final primarySwatch = builtVariants.isNotEmpty
+        ? builtVariants.first.swatch
+        : colorSwatches[selectedColorIdx];
+
+    final id =
+        editingId ?? (DateTime.now().millisecondsSinceEpoch % 900000) + 100000;
+
+    final product = Product(
+      id,
+      name,
+      brand,
+      selectedTag,
+      selectedGroup,
+      price,
+      mrp < price ? price : mrp,
+      4.5,
+      1,
+      Icons.shopping_bag,
+      primarySwatch,
+      primaryImg,
+      stock: stock,
+      videoUrl: videoUrlC.text.trim().isEmpty ? null : videoUrlC.text.trim(),
+      variants: builtVariants,
     );
-    nameCtrl.clear();
-    videoUrlCtrl.clear();
-    saveCatalogToStorage();
+
+    final existingIdx = products.indexWhere((e) => e.id == id);
+    if (existingIdx >= 0) {
+      products[existingIdx] = product;
+    } else {
+      products.insert(0, product);
+    }
+
     catalogVersion.value++;
-    setState(() {});
+    await saveStoreToStorage();
+    await upsertProductToSupabase(product);
+
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '"$name" saved locally; syncing to cloud in the background.',
+          editingId != null ? 'Product updated' : 'Product added to store',
         ),
       ),
     );
+    _clearForm();
   }
 
-  void _removeProduct(Product p) {
-    products.removeWhere((item) => item.id == p.id);
-    recentlyViewed.removeWhere((item) => item.id == p.id);
-    store.wish.remove(p.id);
-    store.lines.removeWhere((line) => line.p.id == p.id);
-    saveCatalogToStorage();
-    unawaited(deleteProductFromSupabase(p.id));
-    saveStoreToStorage();
+  Future<void> _deleteProduct(Product p) async {
+    products.removeWhere((e) => e.id == p.id);
     catalogVersion.value++;
-    setState(() {});
+    await saveStoreToStorage();
+    await deleteProductFromSupabase(p.id);
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('"${p.name}" removed from store and Supabase')),
+      SnackBar(content: Text('${p.name} removed')),
     );
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: blueBar(
-        'Admin Panel',
-        actions: [
-          IconButton(
-            tooltip: 'Sync from Supabase',
-            onPressed: () async {
-              final err = await fetchFromSupabase();
-              if (mounted) {
-                setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      err == null ? 'Supabase data synced!' : err,
-                    ),
-                  ),
-                );
-              }
-            },
-            icon: const Icon(Icons.cloud_sync, color: Colors.white),
-          ),
-        ],
-      ),
+      appBar: blueBar(editingId == null ? 'Admin Panel' : 'Edit Product'),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
@@ -1170,13 +1730,18 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Add New Product (Cloud Synced)',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                Text(
+                  editingId == null
+                      ? 'Add New Product'
+                      : 'Update Product #$editingId',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 TextField(
-                  controller: nameCtrl,
+                  controller: nameC,
                   decoration: const InputDecoration(
                     labelText: 'Product Name',
                     border: OutlineInputBorder(),
@@ -1184,7 +1749,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                 ),
                 const SizedBox(height: 10),
                 TextField(
-                  controller: brandCtrl,
+                  controller: brandC,
                   decoration: const InputDecoration(
                     labelText: 'Brand',
                     border: OutlineInputBorder(),
@@ -1195,17 +1760,14 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        initialValue: selectedGroup,
+                        value: selectedGroup,
                         decoration: const InputDecoration(
                           labelText: 'Category',
                           border: OutlineInputBorder(),
                         ),
-                        items: const [
-                          DropdownMenuItem(value: 'Men', child: Text('Men')),
-                          DropdownMenuItem(value: 'Women', child: Text('Women')),
-                          DropdownMenuItem(value: 'Mobiles', child: Text('Mobiles')),
-                          DropdownMenuItem(value: 'Electronics', child: Text('Electronics')),
-                          DropdownMenuItem(value: 'Home', child: Text('Home')),
+                        items: [
+                          for (final g in kStoreCategories)
+                            DropdownMenuItem(value: g, child: Text(g)),
                         ],
                         onChanged: (v) {
                           if (v != null) setState(() => selectedGroup = v);
@@ -1215,20 +1777,14 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        initialValue: selectedTag,
+                        value: selectedTag,
                         decoration: const InputDecoration(
                           labelText: 'Type Tag',
                           border: OutlineInputBorder(),
                         ),
-                        items: const [
-                          DropdownMenuItem(value: 'T-Shirt', child: Text('T-Shirt')),
-                          DropdownMenuItem(value: 'Jacket', child: Text('Jacket')),
-                          DropdownMenuItem(value: 'Dress', child: Text('Dress')),
-                          DropdownMenuItem(value: 'Pant', child: Text('Pant')),
-                          DropdownMenuItem(value: 'Mobile', child: Text('Mobile')),
-                          DropdownMenuItem(value: 'Headphone', child: Text('Headphone')),
-                          DropdownMenuItem(value: 'Laptop', child: Text('Laptop')),
-                          DropdownMenuItem(value: 'Decor', child: Text('Decor')),
+                        items: [
+                          for (final t in kProductTypes)
+                            DropdownMenuItem(value: t, child: Text(t)),
                         ],
                         onChanged: (v) {
                           if (v != null) setState(() => selectedTag = v);
@@ -1242,7 +1798,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   children: [
                     Expanded(
                       child: TextField(
-                        controller: priceCtrl,
+                        controller: priceC,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
                           labelText: 'Sale Price (₹)',
@@ -1253,7 +1809,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: TextField(
-                        controller: mrpCtrl,
+                        controller: mrpC,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
                           labelText: 'MRP (₹)',
@@ -1262,9 +1818,10 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Expanded(
+                    SizedBox(
+                      width: 84,
                       child: TextField(
-                        controller: stockCtrl,
+                        controller: stockC,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
                           labelText: 'Stock',
@@ -1276,1377 +1833,176 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  'Color Variants, Images & Video',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Enter an image URL or choose a file using "Upload Image" for each color. You can also upload or link a product video below.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  'Color Variant & Photos',
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                _variantInputCard(
-                  title: 'Color Variant 1 (Main)',
-                  colorCtrl: c1NameCtrl,
-                  imgCtrl: c1ImgCtrl,
-                  currentSwatch: c1Color,
-                  onSwatchChange: (col) => c1Color = col,
-                ),
-                _variantInputCard(
-                  title: 'Color Variant 2',
-                  colorCtrl: c2NameCtrl,
-                  imgCtrl: c2ImgCtrl,
-                  currentSwatch: c2Color,
-                  onSwatchChange: (col) => c2Color = col,
-                ),
-                _variantInputCard(
-                  title: 'Color Variant 3',
-                  colorCtrl: c3NameCtrl,
-                  imgCtrl: c3ImgCtrl,
-                  currentSwatch: c3Color,
-                  onSwatchChange: (col) => c3Color = col,
-                ),
-                Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.videocam_outlined, color: blue, size: 20),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text(
-                              'Product Video (Optional)',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          TextButton.icon(
-                            style: TextButton.styleFrom(
-                              foregroundColor: blue,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            onPressed: _uploadProductVideo,
-                            icon: const Icon(Icons.video_call, size: 18),
-                            label: const Text('Upload Video'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: videoUrlCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Video URL (.mp4) or Uploaded Video',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: blue,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    onPressed: _addProduct,
-                    icon: const Icon(Icons.add),
-                    label: const Text('ADD PRODUCT TO STORE'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: card(context),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Store Products (${products.length})',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Click Remove if a product was added by mistake or needs to be deleted.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                const SizedBox(height: 8),
-                if (products.isEmpty)
-                  const Text(
-                    'No products in store',
-                    style: TextStyle(color: Colors.grey),
-                  )
-                else
-                  for (final p in List<Product>.from(products))
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: SizedBox(
-                          width: 44,
-                          height: 44,
-                          child: NetImg(p),
-                        ),
-                      ),
-                      title: Text(
-                        p.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        '${p.brand} • ${p.group} • ₹${p.price}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      trailing: TextButton.icon(
-                        style: TextButton.styleFrom(foregroundColor: Colors.red),
-                        onPressed: () => _removeProduct(p),
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                        label: const Text('Remove'),
-                      ),
-                    ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          ListenableBuilder(
-            listenable: store,
-            builder: (context, _) => Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: card(context),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Manage Orders (${store.orders.length})',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  if (store.orders.isEmpty)
-                    const Text(
-                      'No orders placed yet',
-                      style: TextStyle(color: Colors.grey),
-                    )
-                  else
-                    for (final o in store.orders)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text('${o.id} — ₹${o.total}'),
-                        subtitle: Text('Current Status: ${o.statusLabel}'),
-                        trailing: DropdownButton<String>(
-                          value: [
-                            'Placed',
-                            'Shipped',
-                            'Out for delivery',
-                            'Delivered',
-                            'Cancelled',
-                          ].contains(o.statusLabel)
-                              ? o.statusLabel
-                              : 'Placed',
-                          items: const [
-                            DropdownMenuItem(value: 'Placed', child: Text('Placed')),
-                            DropdownMenuItem(value: 'Shipped', child: Text('Shipped')),
-                            DropdownMenuItem(
-                              value: 'Out for delivery',
-                              child: Text('Out for delivery'),
-                            ),
-                            DropdownMenuItem(value: 'Delivered', child: Text('Delivered')),
-                            DropdownMenuItem(value: 'Cancelled', child: Text('Cancelled')),
-                          ],
-                          onChanged: (newStatus) {
-                            if (newStatus != null) {
-                              store.setOrderStatus(o.id, newStatus);
-                            }
-                          },
-                        ),
-                      ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-void openAdminPanel(BuildContext context) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(builder: (_) => const AdminPanelPage()),
-  );
-}
-
-Future<void> openLoginPopup(BuildContext context) async {
-  final phoneCtrl = TextEditingController();
-  final emailCtrl = TextEditingController();
-  final otpCtrl = TextEditingController();
-  bool useEmail = false;
-  bool otpSent = false;
-  int resendSec = 30;
-  Timer? countdown;
-
-  await showDialog(
-    context: context,
-    barrierDismissible: true,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setS) {
-        void startResendTimer() {
-          countdown?.cancel();
-          resendSec = 30;
-          countdown = Timer.periodic(const Duration(seconds: 1), (tm) {
-            if (resendSec <= 1) {
-              tm.cancel();
-              setS(() => resendSec = 0);
-            } else {
-              setS(() => resendSec--);
-            }
-          });
-        }
-
-        final isMobile = MediaQuery.of(ctx).size.width < 600;
-        final contactValid = useEmail
-            ? emailCtrl.text.trim().contains('@')
-            : phoneCtrl.text.trim().length >= 10;
-        final otpValid = otpCtrl.text.trim().length == 4;
-
-        final blueSide = Container(
-          width: isMobile ? double.infinity : 230,
-          color: blue,
-          padding: EdgeInsets.all(isMobile ? 18 : 24),
-          child: isMobile
-              ? const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Text(
-                      'Login',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
+                    for (int i = 0; i < colorNames.length; i++)
+                      ChoiceChip(
+                        avatar: CircleAvatar(
+                          backgroundColor: colorSwatches[i],
+                          radius: 8,
+                        ),
+                        label: Text(colorNames[i]),
+                        selected: selectedColorIdx == i,
+                        onSelected: (_) =>
+                            setState(() => selectedColorIdx = i),
                       ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Get access to your Orders, Wishlist and Recommendations',
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
-                    ),
                   ],
-                )
-              : const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Login',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 12),
-                    Text(
-                      'Get access to your Orders, Wishlist and Recommendations',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 15,
-                        height: 1.4,
-                      ),
-                    ),
-                    Spacer(),
-                    Icon(
-                      Icons.shopping_bag_rounded,
-                      color: Colors.amber,
-                      size: 72,
-                    ),
-                  ],
-                ),
-        );
-
-        final formSide = Padding(
-          padding: EdgeInsets.all(isMobile ? 16 : 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                otpSent ? 'Verify 4-digit OTP' : 'Log in for the best experience',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 14),
-              if (!otpSent) ...[
-                if (!useEmail)
-                  TextField(
-                    controller: phoneCtrl,
-                    keyboardType: TextInputType.phone,
-                    onChanged: (_) => setS(() {}),
-                    decoration: const InputDecoration(
-                      prefixText: '+91  ',
-                      labelText: 'Enter Phone Number',
-                      border: OutlineInputBorder(),
-                    ),
-                  )
-                else
-                  TextField(
-                    controller: emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    onChanged: (_) => setS(() {}),
-                    decoration: const InputDecoration(
-                      labelText: 'Enter Email ID',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () => setS(() => useEmail = !useEmail),
-                    child: Text(
-                      useEmail ? 'Use Phone Number' : 'Use Email-ID',
-                    ),
-                  ),
-                ),
-              ] else ...[
-                Text(
-                  'Demo OTP sent to ${useEmail ? emailCtrl.text.trim() : '+91 ${phoneCtrl.text.trim()}'} (Test code: 1234)',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 10),
-                TextField(
-                  controller: otpCtrl,
-                  maxLength: 4,
-                  keyboardType: TextInputType.number,
-                  onChanged: (_) => setS(() {}),
-                  decoration: const InputDecoration(
-                    labelText: 'Enter 4-digit OTP (e.g. 1234)',
-                    border: OutlineInputBorder(),
-                    counterText: '',
-                  ),
-                ),
-                const SizedBox(height: 6),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      onPressed: () => setS(() {
-                        otpSent = false;
-                        otpCtrl.clear();
-                      }),
-                      child: const Text('Change'),
-                    ),
-                    TextButton(
-                      onPressed: resendSec == 0
-                          ? () {
-                              startResendTimer();
-                              ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(
-                                  content: Text('OTP resent! (Demo: 1234)'),
-                                ),
-                              );
-                            }
-                          : null,
-                      child: Text(
-                        resendSec == 0 ? 'Resend OTP' : 'Resend in ${resendSec}s',
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 6),
-              const Text(
-                'By continuing, you agree to Style Shop Terms of Use and Privacy Policy.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: (!otpSent ? contactValid : otpValid)
-                        ? orange
-                        : Colors.grey.shade300,
-                    foregroundColor: (!otpSent ? contactValid : otpValid)
-                        ? Colors.white
-                        : Colors.grey.shade700,
-                  ),
-                  onPressed: !otpSent
-                      ? (contactValid
-                          ? () {
-                              setS(() => otpSent = true);
-                              startResendTimer();
-                            }
-                          : null)
-                      : (otpValid
-                          ? () {
-                              countdown?.cancel();
-                              final val = useEmail
-                                  ? emailCtrl.text.trim()
-                                  : '+91 ${phoneCtrl.text.trim()}';
-                              profile.loggedInUser = val;
-                              rememberAddress(
-                                profile.name.isEmpty ? val : profile.name,
-                                profile.address,
-                                profile.pin,
-                              );
-                              Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Verified & logged in as $val'),
-                                ),
-                              );
-                            }
-                          : null),
-                  child: Text(!otpSent ? 'Continue' : 'Verify OTP'),
-                ),
-              ),
-            ],
-          ),
-        );
-
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 680),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Material(
-                  color: Theme.of(ctx).colorScheme.surface,
-                  clipBehavior: Clip.antiAlias,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: isMobile
-                      ? SingleChildScrollView(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [blueSide, formSide],
-                          ),
-                        )
-                      : IntrinsicHeight(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              blueSide,
-                              Expanded(child: formSide),
-                            ],
-                          ),
-                        ),
-                ),
-                Positioned(
-                  top: -14,
-                  right: -14,
-                  child: Material(
-                    color: Colors.white,
-                    shape: const CircleBorder(),
-                    elevation: 4,
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: () {
-                        countdown?.cancel();
-                        Navigator.pop(ctx);
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Icon(
-                          Icons.close,
-                          size: 20,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    ),
-  );
-  countdown?.cancel();
-}
-
-class SupportChatPage extends StatefulWidget {
-  const SupportChatPage({super.key});
-
-  @override
-  State<SupportChatPage> createState() => _SupportChatPageState();
-}
-
-class _SupportChatPageState extends State<SupportChatPage> {
-  final TextEditingController msgCtrl = TextEditingController();
-  final List<(bool isUser, String text)> messages = [
-    (
-      false,
-      'Welcome to Style Shop Support! How can we help you with your order, payment, or return today?',
-    ),
-  ];
-
-  String _autoReply(String txt) {
-    final l = txt.toLowerCase();
-    if (l.contains('order') || l.contains('track')) {
-      return 'You can check the live status of your order under the Orders tab -> TRACK ORDER.';
-    }
-    if (l.contains('return') || l.contains('refund')) {
-      return 'You can submit a Return Request from the Orders tab within 7 days of delivery.';
-    }
-    if (l.contains('pay') || l.contains('upi') || l.contains('card')) {
-      return 'If a UPI or Card payment is pending or cancelled, the order is not placed. Please try again from checkout.';
-    }
-    return 'Thank you! We have noted your message ("$txt") and our support team will respond shortly.';
-  }
-
-  void _send([String? preset]) {
-    final txt = (preset ?? msgCtrl.text).trim();
-    if (txt.isEmpty) return;
-    setState(() {
-      messages.add((true, txt));
-      messages.add((false, _autoReply(txt)));
-    });
-    if (preset == null) msgCtrl.clear();
-  }
-
-  @override
-  void dispose() {
-    msgCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const quickChips = [
-      'Where is my order?',
-      'Return policy',
-      'Payment issue',
-    ];
-    return Scaffold(
-      appBar: blueBar(
-        'Support Chat',
-        actions: [
-          IconButton(
-            tooltip: 'WhatsApp Support',
-            onPressed: () => openWhatsAppSupport(context),
-            icon: const Icon(Icons.call, color: Colors.white),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Container(
-            color: card(context),
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (final q in quickChips)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ActionChip(
-                        label: Text(q),
-                        onPressed: () => _send(q),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: messages.length,
-              itemBuilder: (context, i) {
-                final (isUser, text) = messages[i];
-                return Align(
-                  alignment:
-                      isUser ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    constraints: const BoxConstraints(maxWidth: 360),
-                    decoration: BoxDecoration(
-                      color: isUser ? blue : card(context),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      text,
-                      style: TextStyle(color: isUser ? Colors.white : null),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          Container(
-            color: card(context),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: SafeArea(
-              top: false,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: msgCtrl,
-                      onSubmitted: (_) => _send(),
-                      decoration: const InputDecoration(
-                        hintText: 'Type your message...',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: blue),
-                    onPressed: () => _send(),
-                    child: const Icon(Icons.send, size: 18),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-void openSupportChat(BuildContext context) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(builder: (_) => const SupportChatPage()),
-  );
-}
-
-class InfoPage extends StatelessWidget {
-  final String title;
-  final List<(String, String)> sections;
-  final bool showChatButton;
-
-  const InfoPage({
-    super.key,
-    required this.title,
-    required this.sections,
-    this.showChatButton = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: blueBar(title),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          for (final sec in sections)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: card(context),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    sec.$1,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    sec.$2,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      height: 1.5,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if (showChatButton) ...[
-            const SizedBox(height: 4),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: blue,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              onPressed: () => openSupportChat(context),
-              icon: const Icon(Icons.chat_bubble_outline),
-              label: const Text('Start Support Chat'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: green,
-                side: const BorderSide(color: green),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              onPressed: () => openWhatsAppSupport(context),
-              icon: const Icon(Icons.chat),
-              label: const Text('Chat on WhatsApp'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-void openAboutUs(BuildContext context) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => const InfoPage(
-        title: 'About Us',
-        sections: [
-          (
-            'Welcome to Style Shop',
-            'Style Shop is a modern online shopping destination offering fashion, mobiles, electronics, and home essentials at great prices with fast delivery.',
-          ),
-          (
-            'Quality & Trust',
-            'Every product is listed with a focus on quality and customer satisfaction. Transparent pricing, coupon offers, and an easy return policy are our top priorities.',
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-void openContactUs(BuildContext context) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => const InfoPage(
-        title: 'Contact Us',
-        showChatButton: true,
-        sections: [
-          (
-            'Customer Support Email',
-            'support@styleshop.example.com - Reach out to us via email for any queries regarding your order, delivery, or payment.',
-          ),
-          (
-            'Support Hours',
-            'Monday to Saturday, 9:00 AM to 7:00 PM IST.',
-          ),
-          (
-            'Office Address',
-            'Style Shop Retail Hub, Sahibzada Ajit Singh Nagar, Punjab, India.',
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-void openReturnPolicy(BuildContext context) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => const InfoPage(
-        title: 'Return & Refund Policy',
-        sections: [
-          (
-            '7 Days Easy Returns',
-            'Within 7 days of delivery, if a product arrives damaged, defective, or with a size/variant issue, you can easily request a return or exchange.',
-          ),
-          (
-            'Eligibility Conditions',
-            'Items must be unused and returned with all original tags, packaging, and accessories intact.',
-          ),
-          (
-            'Refund Timeline',
-            'Once the returned item is verified, prepaid, UPI, or card refunds are credited back to the original payment source within 3-5 business days.',
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
-
-  @override
-  State<ProfilePage> createState() => _ProfilePageState();
-}
-
-class _ProfilePageState extends State<ProfilePage> {
-  late final TextEditingController nameCtrl;
-  late final TextEditingController addrCtrl;
-  late final TextEditingController pinCtrl;
-  final TextEditingController labelCtrl = TextEditingController(text: 'Home');
-
-  @override
-  void initState() {
-    super.initState();
-    nameCtrl = TextEditingController(text: profile.name);
-    addrCtrl = TextEditingController(text: profile.address);
-    pinCtrl = TextEditingController(text: profile.pin);
-  }
-
-  @override
-  void dispose() {
-    nameCtrl.dispose();
-    addrCtrl.dispose();
-    pinCtrl.dispose();
-    labelCtrl.dispose();
-    super.dispose();
-  }
-
-  void _saveProfile() {
-    rememberAddress(
-      nameCtrl.text,
-      addrCtrl.text,
-      pinCtrl.text,
-      label: labelCtrl.text,
-    );
-    setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile & address saved!')),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: blueBar('My Profile'),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: card(context),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Delivery Details',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          if (profile.loggedInUser != null)
-                            Text(
-                              'Account: ${profile.loggedInUser}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: green,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                        ],
+                      child: TextField(
+                        controller: imgUrlC,
+                        decoration: const InputDecoration(
+                          labelText: 'Image URL',
+                          border: OutlineInputBorder(),
+                        ),
                       ),
                     ),
-                    TextButton(
-                      onPressed: () async {
-                        await openLoginPopup(context);
-                        if (mounted) {
-                          nameCtrl.text = profile.name;
-                          setState(() {});
-                        }
-                      },
-                      child: const Text('LOGIN / SWITCH'),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: _addImageUrl,
+                      child: const Text('Add URL'),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: labelCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Label (Home / Office / Family)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Full Name',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: addrCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Address',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: pinCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Pincode',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: blue,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                  ),
-                  onPressed: _saveProfile,
-                  child: const Text('SAVE'),
-                ),
-              ],
-            ),
-          ),
-          if (profile.addresses.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: card(context),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Saved Addresses',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  for (final a in profile.addresses)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.location_on_outlined, color: blue),
-                      title: Text('${a.label} - ${a.name}'),
-                      subtitle: Text('${a.address}, ${a.pin}'),
-                      trailing: TextButton(
-                        onPressed: () {
-                          rememberAddress(a.name, a.address, a.pin, label: a.label);
-                          nameCtrl.text = a.name;
-                          addrCtrl.text = a.address;
-                          pinCtrl.text = a.pin;
-                          labelCtrl.text = a.label;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('${a.label} address selected')),
-                          );
-                        },
-                        child: const Text('USE'),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: uploadingMedia ? null : _pickAndUploadImages,
+                      icon: const Icon(Icons.photo_library),
+                      label: Text(
+                        uploadingMedia ? 'Uploading...' : 'Upload Photos',
                       ),
                     ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          Container(
-            decoration: BoxDecoration(
-              color: card(context),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: ValueListenableBuilder<bool>(
-              valueListenable: darkMode,
-              builder: (context, dark, _) => SwitchListTile(
-                title: const Text('Dark mode'),
-                value: dark,
-                onChanged: (v) {
-                  darkMode.value = v;
-                  saveDarkMode(v);
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            decoration: BoxDecoration(
-              color: card(context),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(
-                    Icons.admin_panel_settings_outlined,
-                    color: blue,
-                  ),
-                  title: const Text('Admin Panel'),
-                  subtitle: const Text('Add products & manage order status'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => openAdminPanel(context),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.chat_bubble_outline),
-                  title: const Text('Support chat'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => openSupportChat(context),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.info_outline),
-                  title: const Text('About us'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => openAboutUs(context),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.support_agent),
-                  title: const Text('Contact us'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => openContactUs(context),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.assignment_return_outlined),
-                  title: const Text('Return policy'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => openReturnPolicy(context),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class CheckoutPage extends StatefulWidget {
-  const CheckoutPage({super.key});
-
-  @override
-  State<CheckoutPage> createState() => _CheckoutPageState();
-}
-
-class _CheckoutPageState extends State<CheckoutPage> {
-  String pay = 'UPI';
-  bool _processingPay = false;
-  late final TextEditingController name;
-  late final TextEditingController addr;
-  late final TextEditingController pin;
-
-  @override
-  void initState() {
-    super.initState();
-    name = TextEditingController(text: profile.name);
-    addr = TextEditingController(text: profile.address);
-    pin = TextEditingController(text: profile.pin);
-  }
-
-  @override
-  void dispose() {
-    name.dispose();
-    addr.dispose();
-    pin.dispose();
-    super.dispose();
-  }
-
-  Future<void> _handlePay() async {
-    if (store.lines.isEmpty || _processingPay) return;
-
-    if (name.text.trim().isEmpty ||
-        addr.text.trim().isEmpty ||
-        pin.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill name, address and pincode')),
-      );
-      return;
-    }
-
-    if (pay == 'UPI' || pay == 'Credit / Debit card') {
-      final paid = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) {
-          final ctrl = TextEditingController();
-          return AlertDialog(
-            title: Text('$pay - Gateway Checkout'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Amount to pay: ₹${store.total}'),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: ctrl,
-                  decoration: InputDecoration(
-                    labelText: pay == 'UPI'
-                        ? 'Enter UPI ID (e.g. name@upi)'
-                        : 'Enter last 4 digits of card',
-                    border: const OutlineInputBorder(),
-                  ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: uploadingMedia ? null : _pickAndUploadVideo,
+                      icon: const Icon(Icons.videocam),
+                      label: const Text('Upload Video'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Your order will be placed once payment is completed.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('CANCEL PAYMENT'),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: green),
-                onPressed: () {
-                  if (ctrl.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      const SnackBar(
-                        content: Text('Please enter details to pay'),
-                      ),
-                    );
-                    return;
-                  }
-                  Navigator.pop(ctx, true);
-                },
-                child: const Text('COMPLETE PAYMENT'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (paid != true) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment not completed. Order not placed.'),
-          ),
-        );
-        return;
-      }
-    } else {
-      final confirmCod = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Confirm Cash on Delivery'),
-          content: Text(
-            'You will need to pay ₹${store.total} in cash upon delivery. Confirm order?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('NO'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: orange),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('CONFIRM ORDER'),
-            ),
-          ],
-        ),
-      );
-      if (confirmCod != true) return;
-    }
-
-    setState(() => _processingPay = true);
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-
-    rememberAddress(name.text, addr.text, pin.text);
-    final id = store.placeOrder();
-    setState(() => _processingPay = false);
-
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => SuccessPage(orderId: id, pay: pay)),
-      (r) => r.isFirst,
-    );
-  }
-
-  Widget box(List<Widget> children) => Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(14),
-        color: card(context),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: children,
-        ),
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        final saved = store.mrpTotal - store.total;
-        return Scaffold(
-          appBar: blueBar('Checkout'),
-          body: ListView(
-            padding: const EdgeInsets.all(8),
-            children: [
-              box([
-                const Text(
-                  'DELIVERY ADDRESS',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontWeight: FontWeight.bold,
+                TextField(
+                  controller: videoUrlC,
+                  decoration: const InputDecoration(
+                    labelText: 'Product Video URL (optional)',
+                    border: OutlineInputBorder(),
                   ),
                 ),
-                if (profile.addresses.isNotEmpty) ...[
-                  const SizedBox(height: 8),
+                if (_currentImages.isNotEmpty) ...[
+                  const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
-                    runSpacing: 6,
+                    runSpacing: 8,
                     children: [
-                      for (final a in profile.addresses)
-                        ActionChip(
-                          avatar: const Icon(Icons.location_on, size: 16),
-                          label: Text('${a.label} (${a.pin})'),
-                          onPressed: () {
-                            name.text = a.name;
-                            addr.text = a.address;
-                            pin.text = a.pin;
-                          },
+                      for (int idx = 0; idx < _currentImages.length; idx++)
+                        Chip(
+                          label: Text(
+                            'Photo ${idx + 1}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          onDeleted: () =>
+                              setState(() => _currentImages.removeAt(idx)),
                         ),
                     ],
                   ),
                 ],
-                const SizedBox(height: 8),
-                TextField(
-                  controller: name,
-                  decoration: const InputDecoration(labelText: 'Full name'),
-                ),
-                TextField(
-                  controller: addr,
-                  decoration: const InputDecoration(labelText: 'Address'),
-                ),
-                TextField(
-                  controller: pin,
-                  decoration: const InputDecoration(labelText: 'Pincode'),
-                ),
-              ]),
-              box([
-                const Text(
-                  'PAYMENT METHOD',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                for (final m in [
-                  'UPI',
-                  'Credit / Debit card',
-                  'Cash on delivery',
-                ])
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      pay == m
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      color: pay == m ? blue : Colors.grey,
-                    ),
-                    title: Text(m),
-                    onTap: () => setState(() => pay = m),
-                  ),
-              ]),
-              const CouponBox(),
-              box([
-                const Text(
-                  'ORDER SUMMARY',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                priceRow('Price (${store.count} items)', '₹${store.mrpTotal}'),
-                priceRow(
-                  'Discount',
-                  '- ₹${store.mrpTotal - store.subTotal}',
-                  color: green,
-                ),
-                if (store.couponOff > 0)
-                  priceRow(
-                    'Coupon (${store.coupon})',
-                    '- ₹${store.couponOff}',
-                    color: green,
-                  ),
-                priceRow('Delivery charges', 'FREE', color: green),
-                const Divider(),
-                priceRow('Total payable', '₹${store.total}', bold: true),
-                if (store.lines.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      'You will save ₹$saved on this order',
-                      style: const TextStyle(
-                        color: green,
-                        fontWeight: FontWeight.w600,
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: blue,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: _saveProduct,
+                        child: Text(
+                          editingId == null ? 'ADD PRODUCT' : 'SAVE CHANGES',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
-                  ),
-              ]),
-            ],
-          ),
-          bottomNavigationBar: SafeArea(
-            child: SizedBox(
-              height: 56,
-              child: TextButton(
-                style: TextButton.styleFrom(
-                  backgroundColor: orange,
-                  foregroundColor: Colors.white,
-                  shape: const RoundedRectangleBorder(),
+                    if (editingId != null) ...[
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: _clearForm,
+                        child: const Text('CANCEL'),
+                      ),
+                    ],
+                  ],
                 ),
-                onPressed: store.lines.isEmpty || _processingPay
-                    ? null
-                    : _handlePay,
-                child: Text(
-                  _processingPay ? 'PROCESSING...' : 'PAY ₹${store.total}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
+              ],
             ),
           ),
-        );
-      },
+          const SizedBox(height: 16),
+          Text(
+            'Store Products (${products.length})',
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          for (final p in List<Product>.from(products))
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: card(context),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 56,
+                    height: 56,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: NetImg(p),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p.name,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          '${p.group} • ${p.tag} • ₹${p.price}',
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Edit',
+                    onPressed: () => _startEdit(p),
+                    icon: const Icon(Icons.edit, color: blue),
+                  ),
+                  IconButton(
+                    tooltip: 'Delete',
+                    onPressed: () => _deleteProduct(p),
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
