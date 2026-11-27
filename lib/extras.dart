@@ -525,7 +525,8 @@ Future<bool> verifyAdminAccess(BuildContext context) async {
 
   await showDialog<void>(
     context: context,
-    barrierDismissible: false,
+    useRootNavigator: true,
+    barrierDismissible: true,
     builder: (ctx) => StatefulBuilder(
       builder: (context, setS) => AlertDialog(
         title: const Row(
@@ -976,29 +977,13 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  int _secretTapCount = 0;
-  DateTime? _lastTapTime;
-
-  Future<void> _handleSecretAdminTap() async {
-    final now = DateTime.now();
-    if (_lastTapTime == null ||
-        now.difference(_lastTapTime!) > const Duration(seconds: 2)) {
-      _secretTapCount = 1;
-    } else {
-      _secretTapCount++;
-    }
-    _lastTapTime = now;
-
-    if (_secretTapCount >= 5) {
-      _secretTapCount = 0;
-      final ok = await verifyAdminAccess(context);
-      if (!mounted || !ok) return;
-      await Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const AdminPanelPage()),
-      );
-      if (mounted) setState(() {});
-    }
+  Future<void> _openAdminPanel() async {
+    final ok = await verifyAdminAccess(context);
+    if (!mounted || !ok) return;
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(builder: (_) => const AdminPanelPage()),
+    );
+    if (mounted) setState(() {});
   }
 
   void _showAddAddressDialog(BuildContext context) {
@@ -1084,11 +1069,7 @@ class _ProfilePageState extends State<ProfilePage> {
       appBar: AppBar(
         backgroundColor: blue,
         foregroundColor: Colors.white,
-        title: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _handleSecretAdminTap,
-          child: const Text('My Account'),
-        ),
+        title: const Text('My Account'),
       ),
       body: ListenableBuilder(
         listenable: profile,
@@ -1216,6 +1197,26 @@ class _ProfilePageState extends State<ProfilePage> {
                       subtitle: const Text('Chat with support assistant'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => openSupportChat(context),
+                    ),
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: blue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          onPressed: _openAdminPanel,
+                          icon: const Icon(Icons.admin_panel_settings),
+                          label: const Text(
+                            'Open Store Admin',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -1868,16 +1869,21 @@ class AdminPanelPage extends StatefulWidget {
 }
 
 class _AdminPanelPageState extends State<AdminPanelPage> {
-  int? editingId;
+  final idC = TextEditingController();
   final nameC = TextEditingController();
   final brandC = TextEditingController();
   final priceC = TextEditingController();
   final mrpC = TextEditingController();
   final stockC = TextEditingController(text: '10');
+  final imgUrlC = TextEditingController();
   final videoUrlC = TextEditingController();
+  final extraJsonC = TextEditingController();
 
   String selectedGroup = 'Men';
   String selectedTag = 'Shirt';
+  String selectedColor = 'Black';
+  bool saving = false;
+  bool uploading = false;
 
   final List<String> colorNames = [
     'Black',
@@ -1898,107 +1904,68 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     const Color(0xFFEC4899),
   ];
 
-  int selectedColorIdx = 0;
-  final Map<int, List<String>> variantImages = {};
-  final imgUrlC = TextEditingController();
-  bool uploadingMedia = false;
-
-  List<String> get _currentImages =>
-      variantImages.putIfAbsent(selectedColorIdx, () => <String>[]);
+  Color _swatchForColor(String name) {
+    final idx = colorNames.indexWhere(
+      (c) => c.toLowerCase() == name.trim().toLowerCase(),
+    );
+    return idx >= 0 ? colorSwatches[idx] : const Color(0xFF1F2937);
+  }
 
   @override
   void dispose() {
+    idC.dispose();
     nameC.dispose();
     brandC.dispose();
     priceC.dispose();
     mrpC.dispose();
     stockC.dispose();
-    videoUrlC.dispose();
     imgUrlC.dispose();
+    videoUrlC.dispose();
+    extraJsonC.dispose();
     super.dispose();
   }
 
-  void _startEdit(Product p) {
+  void _fillFromProduct(Product p) {
     setState(() {
-      editingId = p.id;
+      idC.text = '${p.id}';
       nameC.text = p.name;
       brandC.text = p.brand;
       priceC.text = '${p.price}';
       mrpC.text = '${p.mrp}';
       stockC.text = '${p.stock}';
+      imgUrlC.text = p.img;
       videoUrlC.text = p.videoUrl ?? '';
       selectedGroup = kStoreCategories.contains(p.group)
           ? p.group
           : kStoreCategories.first;
       selectedTag =
           kProductTypes.contains(p.tag) ? p.tag : kProductTypes.first;
-      variantImages.clear();
-      for (final v in p.effectiveVariants) {
-        final idx = colorNames.indexWhere(
-          (c) => c.toLowerCase() == v.colorName.toLowerCase(),
-        );
-        final targetIdx = idx >= 0 ? idx : 0;
-        variantImages[targetIdx] = List<String>.from(v.images);
+      if (p.effectiveVariants.isNotEmpty) {
+        selectedColor = p.effectiveVariants.first.colorName;
       }
-      selectedColorIdx = 0;
+      extraJsonC.text = const JsonEncoder.withIndent('  ').convert(p.toJson());
     });
   }
 
-  void _clearForm() {
+  void _resetFields() {
     setState(() {
-      editingId = null;
+      idC.clear();
       nameC.clear();
       brandC.clear();
       priceC.clear();
       mrpC.clear();
       stockC.text = '10';
+      imgUrlC.clear();
       videoUrlC.clear();
-      imgUrlC.clear();
-      variantImages.clear();
-      selectedColorIdx = 0;
+      extraJsonC.clear();
+      selectedColor = 'Black';
     });
   }
 
-  void _addImageUrl() {
-    final u = imgUrlC.text.trim();
-    if (u.isEmpty) return;
-    setState(() {
-      _currentImages.add(u);
-      imgUrlC.clear();
-    });
-  }
-
-  Future<void> _pickAndUploadImages() async {
+  Future<void> _pickImageToUpload() async {
     final dynamic picker = FilePicker;
     final dynamic res = await picker.pickFiles(
       type: FileType.image,
-      allowMultiple: true,
-      withData: true,
-    );
-    if (res == null) return;
-    final List<dynamic> pickedFiles = (res.files as List?) ?? const [];
-    if (pickedFiles.isEmpty) return;
-    setState(() => uploadingMedia = true);
-    for (final f in pickedFiles) {
-      final Uint8List? bytes = f.bytes as Uint8List?;
-      if (bytes == null || bytes.isEmpty) continue;
-      final url = await uploadMediaBytesToSupabase(
-        bytes: bytes,
-        fileName: f.name,
-        folder: 'products',
-      );
-      if (url != null) {
-        _currentImages.add(url);
-      }
-    }
-    if (!mounted) return;
-    setState(() => uploadingMedia = false);
-  }
-
-  Future<void> _pickAndUploadVideo() async {
-    final dynamic picker = FilePicker;
-    final dynamic res = await picker.pickFiles(
-      type: FileType.video,
       allowMultiple: false,
       withData: true,
     );
@@ -2008,114 +1975,162 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     final dynamic f = pickedFiles.first;
     final Uint8List? bytes = f.bytes as Uint8List?;
     if (bytes == null || bytes.isEmpty) return;
-    setState(() => uploadingMedia = true);
+
+    setState(() => uploading = true);
     final url = await uploadMediaBytesToSupabase(
       bytes: bytes,
       fileName: f.name,
-      folder: 'videos',
+      folder: 'products',
     );
     if (!mounted) return;
     setState(() {
-      uploadingMedia = false;
-      if (url != null) videoUrlC.text = url;
+      uploading = false;
+      if (url != null) imgUrlC.text = url;
     });
   }
 
-  Future<void> _saveProduct() async {
+  Future<void> _saveToSupabaseAndApp() async {
     final name = nameC.text.trim();
-    final brand = brandC.text.trim().isEmpty ? 'Style Co' : brandC.text.trim();
     final price = int.tryParse(priceC.text.trim()) ?? 0;
-    final mrp = int.tryParse(mrpC.text.trim()) ?? price;
-    final stock = int.tryParse(stockC.text.trim()) ?? 10;
-
     if (name.isEmpty || price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter product name and valid price'),
+          content: Text('Product name aur valid sale price daalein'),
         ),
       );
       return;
     }
 
-    final builtVariants = <ProductVariant>[];
-    variantImages.forEach((cIdx, imgs) {
-      if (imgs.isNotEmpty) {
-        builtVariants.add(
-          ProductVariant(
-            colorNames[cIdx],
-            colorSwatches[cIdx],
-            List<String>.from(imgs),
-          ),
-        );
-      }
-    });
+    setState(() => saving = true);
 
-    final primaryImg = builtVariants.isNotEmpty
-        ? builtVariants.first.images.first
-        : px(15133974);
-    final primarySwatch = builtVariants.isNotEmpty
-        ? builtVariants.first.swatch
-        : colorSwatches[selectedColorIdx];
+    final parsedId = int.tryParse(idC.text.trim());
+    final rowId =
+        parsedId ?? ((DateTime.now().millisecondsSinceEpoch % 900000) + 100000);
+    final brand = brandC.text.trim().isEmpty ? 'Style Co' : brandC.text.trim();
+    final mrp = int.tryParse(mrpC.text.trim()) ?? price;
+    final stock = int.tryParse(stockC.text.trim()) ?? 10;
+    final imageUrl =
+        imgUrlC.text.trim().isEmpty ? px(15133974) : imgUrlC.text.trim();
+    final swatch = _swatchForColor(selectedColor);
 
-    final id =
-        editingId ?? (DateTime.now().millisecondsSinceEpoch % 900000) + 100000;
+    Map<String, dynamic> customData = {};
+    if (extraJsonC.text.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(extraJsonC.text.trim());
+        if (decoded is Map) {
+          customData = Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {}
+    }
 
     final product = Product(
-      id,
+      rowId,
       name,
       brand,
       selectedTag,
       selectedGroup,
       price,
       mrp < price ? price : mrp,
-      4.5,
-      1,
+      (customData['rating'] is num)
+          ? (customData['rating'] as num).toDouble()
+          : 4.5,
+      (customData['ratingCount'] is num)
+          ? (customData['ratingCount'] as num).toInt()
+          : 1,
       Icons.shopping_bag,
-      primarySwatch,
-      primaryImg,
+      swatch,
+      imageUrl,
       stock: stock,
       videoUrl: videoUrlC.text.trim().isEmpty ? null : videoUrlC.text.trim(),
-      variants: builtVariants,
+      variants: [
+        ProductVariant(selectedColor, swatch, [imageUrl]),
+      ],
     );
 
-    final existingIdx = products.indexWhere((e) => e.id == id);
-    if (existingIdx >= 0) {
-      products[existingIdx] = product;
+    final jsonPayload = product.toJson();
+    customData.forEach((k, v) {
+      if (k != 'id') jsonPayload[k] = v;
+    });
+    jsonPayload['id'] = rowId;
+
+    final idx = products.indexWhere((e) => e.id == rowId);
+    if (idx >= 0) {
+      products[idx] = product;
     } else {
       products.insert(0, product);
     }
-
     catalogVersion.value++;
     await saveStoreToStorage();
-    await upsertProductToSupabase(product);
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          editingId != null ? 'Product updated' : 'Product added to store',
-        ),
-      ),
-    );
-    _clearForm();
+    try {
+      final uri = Uri.parse(
+        '$kSupabaseUrl/rest/v1/$kStoreProductsTable?on_conflict=id',
+      );
+      final response = await http.post(
+        uri,
+        headers: _supabaseHeaders(preferReturn: true),
+        body: jsonEncode([
+          {
+            'id': rowId,
+            'name': name,
+            'product_name': name,
+            'brand': brand,
+            'category': selectedGroup,
+            'type_tag': selectedTag,
+            'sale_price': price,
+            'mrp': mrp < price ? price : mrp,
+            'stock': stock,
+            'color_variants': selectedColor,
+            'images': imageUrl,
+            'data': jsonPayload,
+          },
+        ]),
+      );
+
+      if (!mounted) return;
+      setState(() => saving = false);
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        idC.text = '$rowId';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Supabase store_products mein save ho gaya (ID: $rowId)'),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'App mein save hua, Supabase status ${response.statusCode}: ${response.body}',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Supabase sync error: $e')),
+      );
+    }
   }
 
-  Future<void> _deleteProduct(Product p) async {
+  Future<void> _removeRow(Product p) async {
     products.removeWhere((e) => e.id == p.id);
     catalogVersion.value++;
     await saveStoreToStorage();
     await deleteProductFromSupabase(p.id);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${p.name} removed')),
-    );
     setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Row #${p.id} (${p.name}) delete ho gayi')),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: blueBar(editingId == null ? 'Admin Panel' : 'Edit Product'),
+      appBar: blueBar('store_products Manager'),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
@@ -2128,30 +2143,57 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  editingId == null
-                      ? 'Add New Product'
-                      : 'Update Product #$editingId',
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
+                const Text(
+                  'Add / Edit Row in store_products',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: nameC,
+                  controller: idC,
+                  keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'Product Name',
+                    labelText: 'id (int8 — khali chhodein toh auto ID banega)',
                     border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
-                  controller: brandC,
+                  controller: nameC,
                   decoration: const InputDecoration(
-                    labelText: 'Brand',
+                    labelText: 'name / product_name (text)',
                     border: OutlineInputBorder(),
                   ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: brandC,
+                        decoration: const InputDecoration(
+                          labelText: 'brand (text)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: selectedColor,
+                        decoration: const InputDecoration(
+                          labelText: 'color_variants',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          for (final c in colorNames)
+                            DropdownMenuItem(value: c, child: Text(c)),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => selectedColor = v);
+                        },
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 Row(
@@ -2160,7 +2202,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                       child: DropdownButtonFormField<String>(
                         value: selectedGroup,
                         decoration: const InputDecoration(
-                          labelText: 'Category',
+                          labelText: 'category',
                           border: OutlineInputBorder(),
                         ),
                         items: [
@@ -2177,7 +2219,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                       child: DropdownButtonFormField<String>(
                         value: selectedTag,
                         decoration: const InputDecoration(
-                          labelText: 'Type Tag',
+                          labelText: 'type_tag',
                           border: OutlineInputBorder(),
                         ),
                         items: [
@@ -2199,7 +2241,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                         controller: priceC,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: 'Sale Price (₹)',
+                          labelText: 'sale_price (₹)',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -2210,7 +2252,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                         controller: mrpC,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: 'MRP (₹)',
+                          labelText: 'mrp (₹)',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -2222,34 +2264,11 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                         controller: stockC,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: 'Stock',
+                          labelText: 'stock',
                           border: OutlineInputBorder(),
                         ),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'Color Variant & Photos',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (int i = 0; i < colorNames.length; i++)
-                      ChoiceChip(
-                        avatar: CircleAvatar(
-                          backgroundColor: colorSwatches[i],
-                          radius: 8,
-                        ),
-                        label: Text(colorNames[i]),
-                        selected: selectedColorIdx == i,
-                        onSelected: (_) =>
-                            setState(() => selectedColorIdx = i),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -2259,62 +2278,36 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                       child: TextField(
                         controller: imgUrlC,
                         decoration: const InputDecoration(
-                          labelText: 'Image URL',
+                          labelText: 'images (URL ya uploaded link)',
                           border: OutlineInputBorder(),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    OutlinedButton(
-                      onPressed: _addImageUrl,
-                      child: const Text('Add URL'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
                     ElevatedButton.icon(
-                      onPressed: uploadingMedia ? null : _pickAndUploadImages,
-                      icon: const Icon(Icons.photo_library),
-                      label: Text(
-                        uploadingMedia ? 'Uploading...' : 'Upload Photos',
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: uploadingMedia ? null : _pickAndUploadVideo,
-                      icon: const Icon(Icons.videocam),
-                      label: const Text('Upload Video'),
+                      onPressed: uploading ? null : _pickImageToUpload,
+                      icon: const Icon(Icons.upload),
+                      label: Text(uploading ? '...' : 'Upload'),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 TextField(
                   controller: videoUrlC,
                   decoration: const InputDecoration(
-                    labelText: 'Product Video URL (optional)',
+                    labelText: 'videoUrl (optional)',
                     border: OutlineInputBorder(),
                   ),
                 ),
-                if (_currentImages.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (int idx = 0; idx < _currentImages.length; idx++)
-                        Chip(
-                          label: Text(
-                            'Photo ${idx + 1}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          onDeleted: () =>
-                              setState(() => _currentImages.removeAt(idx)),
-                        ),
-                    ],
+                const SizedBox(height: 10),
+                TextField(
+                  controller: extraJsonC,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    labelText: 'data (jsonb — optional extra JSON fields)',
+                    border: OutlineInputBorder(),
                   ),
-                ],
+                ),
                 const SizedBox(height: 14),
                 Row(
                   children: [
@@ -2324,20 +2317,18 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                           backgroundColor: blue,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
-                        onPressed: _saveProduct,
+                        onPressed: saving ? null : _saveToSupabaseAndApp,
                         child: Text(
-                          editingId == null ? 'ADD PRODUCT' : 'SAVE CHANGES',
+                          saving ? 'SAVING TO SUPABASE...' : 'SAVE ROW',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
-                    if (editingId != null) ...[
-                      const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: _clearForm,
-                        child: const Text('CANCEL'),
-                      ),
-                    ],
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: _resetFields,
+                      child: const Text('CLEAR'),
+                    ),
                   ],
                 ),
               ],
@@ -2345,7 +2336,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Store Products (${products.length})',
+            'Saved Rows (${products.length})',
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
@@ -2360,8 +2351,8 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
               child: Row(
                 children: [
                   SizedBox(
-                    width: 56,
-                    height: 56,
+                    width: 52,
+                    height: 52,
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: NetImg(p),
@@ -2373,11 +2364,11 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          p.name,
+                          '#${p.id} • ${p.name}',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         Text(
-                          '${p.group} • ${p.tag} • ₹${p.price}',
+                          '${p.group} • ${p.tag} • ₹${p.price} (Stock: ${p.stock})',
                           style: const TextStyle(
                             color: Colors.grey,
                             fontSize: 12,
@@ -2387,13 +2378,13 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Edit',
-                    onPressed: () => _startEdit(p),
+                    tooltip: 'Load into Form',
+                    onPressed: () => _fillFromProduct(p),
                     icon: const Icon(Icons.edit, color: blue),
                   ),
                   IconButton(
-                    tooltip: 'Delete',
-                    onPressed: () => _deleteProduct(p),
+                    tooltip: 'Delete Row',
+                    onPressed: () => _removeRow(p),
                     icon: const Icon(Icons.delete_outline, color: Colors.red),
                   ),
                 ],
