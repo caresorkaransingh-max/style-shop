@@ -23,6 +23,7 @@ const String kProductImagesBucket = 'product-images';
 const String kDefaultStoreUserKey = 'default_guest_user';
 
 String _activeStoreUserKey = kDefaultStoreUserKey;
+final Map<String, String> _lastPushedUserPayloadByKey = {};
 
 String _normalizeUserKey(String raw) {
   final clean = raw.trim().toLowerCase().replaceAll(
@@ -96,12 +97,72 @@ Future<String?> uploadMediaBytesToSupabase({
   }
 }
 
-Future<List<Product>> fetchProductsFromSupabase() async {
+DateTime? _lastCloudProductsFetch;
+List<Product>? _cachedCloudProducts;
+
+List<String> _dedupeUrls(Iterable<String> urls) {
+  final seen = <String>{};
+  final out = <String>[];
+  for (final raw in urls) {
+    final clean = raw.trim();
+    if (clean.isEmpty) continue;
+    if (seen.add(clean)) {
+      out.add(clean);
+    }
+  }
+  return out;
+}
+
+Product _cleanProductVariants(Product p) {
+  final cleanMainImg = p.img.trim().isEmpty ? px(15133974) : p.img.trim();
+  final rawVars = p.effectiveVariants;
+  if (rawVars.isEmpty) return p;
+
+  final cleanedVars = <ProductVariant>[];
+  for (final v in rawVars) {
+    final deduped = _dedupeUrls(v.images);
+    cleanedVars.add(
+      ProductVariant(
+        v.colorName,
+        v.swatch,
+        deduped.isEmpty ? <String>[cleanMainImg] : deduped,
+      ),
+    );
+  }
+  final primaryImg = cleanedVars.first.images.first;
+  return Product(
+    p.id,
+    p.name,
+    p.brand,
+    p.tag,
+    p.group,
+    p.price,
+    p.mrp,
+    p.rating,
+    p.reviews,
+    p.icon,
+    p.color,
+    primaryImg,
+    stock: p.stock,
+    videoUrl: p.videoUrl,
+    variants: cleanedVars,
+  );
+}
+
+Future<List<Product>> fetchProductsFromSupabase({bool forceRefresh = false}) async {
+  if (!forceRefresh &&
+      _cachedCloudProducts != null &&
+      _lastCloudProductsFetch != null &&
+      DateTime.now().difference(_lastCloudProductsFetch!).inSeconds < 60) {
+    return List<Product>.from(_cachedCloudProducts!);
+  }
   try {
     final uri = Uri.parse(
       '$kSupabaseUrl/rest/v1/$kStoreProductsTable?select=id,data&order=id.asc',
     );
-    final res = await http.get(uri, headers: _supabaseHeaders());
+    final res = await http
+        .get(uri, headers: _supabaseHeaders())
+        .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
       final loaded = <Product>[];
@@ -111,17 +172,21 @@ Future<List<Product>> fetchProductsFromSupabase() async {
           final map = rawData is String
               ? Map<String, dynamic>.from(jsonDecode(rawData) as Map)
               : Map<String, dynamic>.from(rawData as Map);
-          loaded.add(Product.fromJson(map));
+          loaded.add(_cleanProductVariants(Product.fromJson(map)));
         }
       }
-      return loaded;
+      _cachedCloudProducts = loaded;
+      _lastCloudProductsFetch = DateTime.now();
+      return List<Product>.from(loaded);
     } else {
       debugPrint('Supabase fetchProducts failed: HTTP ${res.statusCode} -> ${res.body}');
     }
   } catch (e) {
     debugPrint('Supabase fetchProducts error: $e');
   }
-  return [];
+  return _cachedCloudProducts != null
+      ? List<Product>.from(_cachedCloudProducts!)
+      : [];
 }
 
 Future<void> upsertProductToSupabase(Product p) async {
@@ -425,12 +490,19 @@ Future<void> saveStoreToStorage() async {
     final productsJson = products.map((p) => p.toJson()).toList();
     await prefs.setString('style_shop_products_v1', jsonEncode(productsJson));
 
-    unawaited(
-      _pushUserDataToSupabase(_activeStoreUserKey, {
-        'store': storeJson,
-        'profile': profileJson,
-      }),
-    );
+    final encodedPayload = jsonEncode({
+      'store': storeJson,
+      'profile': profileJson,
+    });
+    if (_lastPushedUserPayloadByKey[_activeStoreUserKey] != encodedPayload) {
+      _lastPushedUserPayloadByKey[_activeStoreUserKey] = encodedPayload;
+      unawaited(
+        _pushUserDataToSupabase(_activeStoreUserKey, {
+          'store': storeJson,
+          'profile': profileJson,
+        }),
+      );
+    }
   } catch (_) {}
 }
 
@@ -2170,11 +2242,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
   }
 
   void _syncTypedUrlsToActiveColor() {
-    final parts = imgUrlC.text
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
+    final parts = _dedupeUrls(imgUrlC.text.split(','));
     setState(() {
       imagesByColor[activeImageColor] = parts;
     });
@@ -2202,7 +2270,9 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
         folder: 'products',
       );
       if (url != null) {
-        _activeColorImages.add(url);
+        if (!_activeColorImages.contains(url)) {
+          _activeColorImages.add(url);
+        }
         uploadedCount++;
       }
     }
@@ -2320,6 +2390,8 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     } else {
       products.insert(0, product);
     }
+    _cachedCloudProducts = List<Product>.from(products);
+    _lastCloudProductsFetch = DateTime.now();
     catalogVersion.value++;
     await saveStoreToStorage();
 
@@ -2741,6 +2813,8 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                                 child: Image.network(
                                   imgUrl,
                                   fit: BoxFit.cover,
+                                  cacheWidth: 160,
+                                  cacheHeight: 160,
                                   errorBuilder: (_, __, ___) => const Center(
                                     child: Icon(Icons.image, size: 24),
                                   ),
