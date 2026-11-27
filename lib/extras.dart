@@ -1869,6 +1869,7 @@ class AdminPanelPage extends StatefulWidget {
 }
 
 class _AdminPanelPageState extends State<AdminPanelPage> {
+  final ScrollController _scrollC = ScrollController();
   final idC = TextEditingController();
   final nameC = TextEditingController();
   final brandC = TextEditingController();
@@ -2042,6 +2043,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
 
   @override
   void dispose() {
+    _scrollC.dispose();
     idC.dispose();
     nameC.dispose();
     brandC.dispose();
@@ -2111,6 +2113,14 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       activeImageColor = selectedColors.first;
       _syncImgUrlFieldForActiveColor();
 
+      if (_scrollC.hasClients) {
+        _scrollC.animateTo(
+          0,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+        );
+      }
+
       final rawJson = p.toJson();
       if (rawJson['sizes'] is List && (rawJson['sizes'] as List).isNotEmpty) {
         selectedSizes
@@ -2124,7 +2134,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     });
   }
 
-  void _resetFields() {
+  void _resetFields({bool showToast = false}) {
     setState(() {
       idC.clear();
       nameC.clear();
@@ -2143,6 +2153,20 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
         ..clear()
         ..addAll(_availableSizeOptions.take(5));
     });
+    if (_scrollC.hasClients) {
+      _scrollC.animateTo(
+        0,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
+    }
+    if (showToast && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Form reset ho gaya — ab naya product add karein!'),
+        ),
+      );
+    }
   }
 
   void _syncTypedUrlsToActiveColor() {
@@ -2328,10 +2352,10 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       setState(() => saving = false);
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        idC.text = '$rowId';
+        _resetFields();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Supabase store_products mein save ho gaya (ID: $rowId)'),
+            content: Text('Saved (ID: $rowId)! Form clear ho gaya — next product add karein.'),
           ),
         );
       } else {
@@ -2372,6 +2396,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     return Scaffold(
       appBar: blueBar('store_products Manager'),
       body: ListView(
+        controller: _scrollC,
         padding: const EdgeInsets.all(12),
         children: [
           Container(
@@ -2383,9 +2408,32 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Add / Edit Product in store_products',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Add / Edit Product in store_products',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                      ),
+                      onPressed: () => _resetFields(showToast: true),
+                      icon: const Icon(Icons.add_circle_outline, size: 18),
+                      label: const Text(
+                        'Add New Product',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -2761,9 +2809,21 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    OutlinedButton(
-                      onPressed: _resetFields,
-                      child: const Text('CLEAR'),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                      ),
+                      onPressed: () => _resetFields(showToast: true),
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text(
+                        'Add New Product',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ],
                 ),
