@@ -2405,7 +2405,6 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
         body: jsonEncode([
           {
             'id': rowId,
-            'brand': brand,
             'price': price,
             'data': productPayload,
           },
