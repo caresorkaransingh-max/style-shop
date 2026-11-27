@@ -1877,38 +1877,142 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
   final stockC = TextEditingController(text: '10');
   final imgUrlC = TextEditingController();
   final videoUrlC = TextEditingController();
-  final extraJsonC = TextEditingController();
 
   String selectedGroup = 'Men';
   String selectedTag = 'Shirt';
-  String selectedColor = 'Black';
   bool saving = false;
   bool uploading = false;
+  bool uploadingVideo = false;
 
-  final List<String> colorNames = [
-    'Black',
-    'White',
-    'Blue',
-    'Red',
-    'Green',
-    'Brown',
-    'Pink',
+  static const Map<String, Color> kAllColors = {
+    'Black': Color(0xFF111827),
+    'White': Color(0xFFFFFFFF),
+    'Off White': Color(0xFFFAF9F6),
+    'Grey': Color(0xFF6B7280),
+    'Charcoal': Color(0xFF374151),
+    'Silver': Color(0xFFC0C0C0),
+    'Navy Blue': Color(0xFF1E3A8A),
+    'Royal Blue': Color(0xFF2563EB),
+    'Sky Blue': Color(0xFF38BDF8),
+    'Teal': Color(0xFF0D9488),
+    'Turquoise': Color(0xFF06B6D4),
+    'Red': Color(0xFFDC2626),
+    'Maroon': Color(0xFF7F1D1D),
+    'Burgundy': Color(0xFF800020),
+    'Crimson': Color(0xFF991B1B),
+    'Pink': Color(0xFFEC4899),
+    'Baby Pink': Color(0xFFF9A8D4),
+    'Magenta': Color(0xFFD946EF),
+    'Purple': Color(0xFF7C3AED),
+    'Lavender': Color(0xFFC4B5FD),
+    'Violet': Color(0xFF5B21B6),
+    'Green': Color(0xFF16A34A),
+    'Olive Green': Color(0xFF4D7C0F),
+    'Mint Green': Color(0xFF6EE7B7),
+    'Forest Green': Color(0xFF14532D),
+    'Yellow': Color(0xFFEAB308),
+    'Mustard': Color(0xFFCA8A04),
+    'Gold': Color(0xFFD97706),
+    'Orange': Color(0xFFF97316),
+    'Peach': Color(0xFFFDBA74),
+    'Coral': Color(0xFFFB7185),
+    'Brown': Color(0xFF78350F),
+    'Tan': Color(0xFFD2B48C),
+    'Beige': Color(0xFFF5F5DC),
+    'Cream': Color(0xFFFFFDD0),
+    'Khaki': Color(0xFFC3B091),
+    'Multicolor': Color(0xFF8B5CF6),
+  };
+
+  static const List<String> kExtraCategories = [
+    'Men',
+    'Women',
+    'Kids',
+    'Boys',
+    'Girls',
+    'Mobiles',
+    'Electronics',
+    'Laptops',
+    'Audio & Headphones',
+    'Smart Watches',
+    'Home',
+    'Kitchen & Dining',
+    'Furniture',
+    'Decor',
+    'Footwear',
+    'Sports Shoes',
+    'Casual Shoes',
+    'Sandals & Slippers',
+    'Accessories',
+    'Bags & Backpacks',
+    'Watches',
+    'Sunglasses',
+    'Jewellery',
+    'Beauty & Grooming',
+    'Sports & Fitness',
+    'Toys & Games',
+    'Books & Stationery',
   ];
-  final List<Color> colorSwatches = [
-    const Color(0xFF1F2937),
-    const Color(0xFFF3F4F6),
-    const Color(0xFF2563EB),
-    const Color(0xFFDC2626),
-    const Color(0xFF16A34A),
-    const Color(0xFF8B5E3C),
-    const Color(0xFFEC4899),
+
+  static const List<String> kExtraTags = [
+    'Shirt',
+    'T-Shirt',
+    'Polo',
+    'Top',
+    'Kurti',
+    'Saree',
+    'Dress',
+    'Jeans',
+    'Trousers',
+    'Shorts',
+    'Track Pant',
+    'Jacket',
+    'Denim Jacket',
+    'Hoodie',
+    'Sweater',
+    'Blazer',
+    'Sneakers',
+    'Running Shoes',
+    'Heels',
+    'Flats',
+    'Loafers',
+    'Smartphone',
+    'Earbuds',
+    'Headphones',
+    'Smartwatch',
+    'Charger & Cable',
+    'Backpack',
+    'Handbag',
+    'Wallet',
+    'Belt',
+    'Watch',
+    'Sunglasses',
+    'Perfume',
+    'Mug',
+    'Bottle',
+    'Bedsheet',
+    'Cushion',
   ];
+
+  final Set<String> selectedColors = {'Black'};
+  final Map<String, List<String>> imagesByColor = {};
+  String activeImageColor = 'Black';
+
+  List<String> get _allAvailableCategories {
+    final set = <String>{...kStoreCategories, ...kExtraCategories};
+    return set.toList();
+  }
+
+  List<String> get _allAvailableTags {
+    final set = <String>{...kProductTypes, ...kExtraTags};
+    return set.toList();
+  }
+
+  List<String> get _activeColorImages =>
+      imagesByColor.putIfAbsent(activeImageColor, () => <String>[]);
 
   Color _swatchForColor(String name) {
-    final idx = colorNames.indexWhere(
-      (c) => c.toLowerCase() == name.trim().toLowerCase(),
-    );
-    return idx >= 0 ? colorSwatches[idx] : const Color(0xFF1F2937);
+    return kAllColors[name] ?? const Color(0xFF1F2937);
   }
 
   @override
@@ -1921,8 +2025,23 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     stockC.dispose();
     imgUrlC.dispose();
     videoUrlC.dispose();
-    extraJsonC.dispose();
     super.dispose();
+  }
+
+  void _toggleColor(String colorName) {
+    setState(() {
+      if (selectedColors.contains(colorName)) {
+        if (selectedColors.length > 1) {
+          selectedColors.remove(colorName);
+          if (activeImageColor == colorName) {
+            activeImageColor = selectedColors.first;
+          }
+        }
+      } else {
+        selectedColors.add(colorName);
+        activeImageColor = colorName;
+      }
+    });
   }
 
   void _fillFromProduct(Product p) {
@@ -1933,17 +2052,28 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       priceC.text = '${p.price}';
       mrpC.text = '${p.mrp}';
       stockC.text = '${p.stock}';
-      imgUrlC.text = p.img;
+      imgUrlC.clear();
       videoUrlC.text = p.videoUrl ?? '';
-      selectedGroup = kStoreCategories.contains(p.group)
-          ? p.group
-          : kStoreCategories.first;
-      selectedTag =
-          kProductTypes.contains(p.tag) ? p.tag : kProductTypes.first;
-      if (p.effectiveVariants.isNotEmpty) {
-        selectedColor = p.effectiveVariants.first.colorName;
+
+      final cats = _allAvailableCategories;
+      selectedGroup = cats.contains(p.group) ? p.group : cats.first;
+      final tags = _allAvailableTags;
+      selectedTag = tags.contains(p.tag) ? p.tag : tags.first;
+
+      selectedColors.clear();
+      imagesByColor.clear();
+      for (final v in p.effectiveVariants) {
+        final matchKey = kAllColors.keys.firstWhere(
+          (k) => k.toLowerCase() == v.colorName.toLowerCase(),
+          orElse: () => v.colorName,
+        );
+        selectedColors.add(matchKey);
+        imagesByColor[matchKey] = List<String>.from(v.images);
       }
-      extraJsonC.text = const JsonEncoder.withIndent('  ').convert(p.toJson());
+      if (selectedColors.isEmpty) {
+        selectedColors.add('Black');
+      }
+      activeImageColor = selectedColors.first;
     });
   }
 
@@ -1957,15 +2087,66 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       stockC.text = '10';
       imgUrlC.clear();
       videoUrlC.clear();
-      extraJsonC.clear();
-      selectedColor = 'Black';
+      selectedColors
+        ..clear()
+        ..add('Black');
+      imagesByColor.clear();
+      activeImageColor = 'Black';
     });
   }
 
-  Future<void> _pickImageToUpload() async {
+  void _addImageUrlToActiveColor() {
+    final url = imgUrlC.text.trim();
+    if (url.isEmpty) return;
+    setState(() {
+      _activeColorImages.add(url);
+      imgUrlC.clear();
+    });
+  }
+
+  Future<void> _pickAndUploadImages() async {
     final dynamic picker = FilePicker;
     final dynamic res = await picker.pickFiles(
       type: FileType.image,
+      allowMultiple: true,
+      withData: true,
+    );
+    if (res == null) return;
+    final List<dynamic> pickedFiles = (res.files as List?) ?? const [];
+    if (pickedFiles.isEmpty) return;
+
+    setState(() => uploading = true);
+    int uploadedCount = 0;
+    for (final f in pickedFiles) {
+      final Uint8List? bytes = f.bytes as Uint8List?;
+      if (bytes == null || bytes.isEmpty) continue;
+      final url = await uploadMediaBytesToSupabase(
+        bytes: bytes,
+        fileName: f.name,
+        folder: 'products',
+      );
+      if (url != null) {
+        _activeColorImages.add(url);
+        uploadedCount++;
+      }
+    }
+    if (!mounted) return;
+    setState(() => uploading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          uploadedCount > 0
+              ? '$uploadedCount image(s) $activeImageColor mein upload ho gayi!'
+              : 'Image upload fail hui — Supabase bucket check karein',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndUploadVideo() async {
+    final dynamic picker = FilePicker;
+    final dynamic res = await picker.pickFiles(
+      type: FileType.video,
       allowMultiple: false,
       withData: true,
     );
@@ -1976,16 +2157,16 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     final Uint8List? bytes = f.bytes as Uint8List?;
     if (bytes == null || bytes.isEmpty) return;
 
-    setState(() => uploading = true);
+    setState(() => uploadingVideo = true);
     final url = await uploadMediaBytesToSupabase(
       bytes: bytes,
       fileName: f.name,
-      folder: 'products',
+      folder: 'videos',
     );
     if (!mounted) return;
     setState(() {
-      uploading = false;
-      if (url != null) imgUrlC.text = url;
+      uploadingVideo = false;
+      if (url != null) videoUrlC.text = url;
     });
   }
 
@@ -2009,19 +2190,33 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     final brand = brandC.text.trim().isEmpty ? 'Style Co' : brandC.text.trim();
     final mrp = int.tryParse(mrpC.text.trim()) ?? price;
     final stock = int.tryParse(stockC.text.trim()) ?? 10;
-    final imageUrl =
-        imgUrlC.text.trim().isEmpty ? px(15133974) : imgUrlC.text.trim();
-    final swatch = _swatchForColor(selectedColor);
 
-    Map<String, dynamic> customData = {};
-    if (extraJsonC.text.trim().isNotEmpty) {
-      try {
-        final decoded = jsonDecode(extraJsonC.text.trim());
-        if (decoded is Map) {
-          customData = Map<String, dynamic>.from(decoded);
-        }
-      } catch (_) {}
+    if (imgUrlC.text.trim().isNotEmpty) {
+      _activeColorImages.add(imgUrlC.text.trim());
+      imgUrlC.clear();
     }
+
+    String fallbackImg = px(15133974);
+    for (final c in selectedColors) {
+      final list = imagesByColor[c];
+      if (list != null && list.isNotEmpty) {
+        fallbackImg = list.first;
+        break;
+      }
+    }
+
+    final builtVariants = <ProductVariant>[];
+    final allImagesList = <String>[];
+    for (final c in selectedColors) {
+      final imgs = (imagesByColor[c] != null && imagesByColor[c]!.isNotEmpty)
+          ? List<String>.from(imagesByColor[c]!)
+          : <String>[fallbackImg];
+      allImagesList.addAll(imgs);
+      builtVariants.add(ProductVariant(c, _swatchForColor(c), imgs));
+    }
+
+    final firstColor = selectedColors.first;
+    final primarySwatch = _swatchForColor(firstColor);
 
     final product = Product(
       rowId,
@@ -2031,27 +2226,15 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       selectedGroup,
       price,
       mrp < price ? price : mrp,
-      (customData['rating'] is num)
-          ? (customData['rating'] as num).toDouble()
-          : 4.5,
-      (customData['ratingCount'] is num)
-          ? (customData['ratingCount'] as num).toInt()
-          : 1,
+      4.5,
+      1,
       Icons.shopping_bag,
-      swatch,
-      imageUrl,
+      primarySwatch,
+      fallbackImg,
       stock: stock,
       videoUrl: videoUrlC.text.trim().isEmpty ? null : videoUrlC.text.trim(),
-      variants: [
-        ProductVariant(selectedColor, swatch, [imageUrl]),
-      ],
+      variants: builtVariants,
     );
-
-    final jsonPayload = product.toJson();
-    customData.forEach((k, v) {
-      if (k != 'id') jsonPayload[k] = v;
-    });
-    jsonPayload['id'] = rowId;
 
     final idx = products.indexWhere((e) => e.id == rowId);
     if (idx >= 0) {
@@ -2080,9 +2263,9 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
             'sale_price': price,
             'mrp': mrp < price ? price : mrp,
             'stock': stock,
-            'color_variants': selectedColor,
-            'images': imageUrl,
-            'data': jsonPayload,
+            'color_variants': selectedColors.join(', '),
+            'images': allImagesList.toSet().join(', '),
+            'data': product.toJson(),
           },
         ]),
       );
@@ -2129,6 +2312,8 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
 
   @override
   Widget build(BuildContext context) {
+    final categories = _allAvailableCategories;
+    final tags = _allAvailableTags;
     return Scaffold(
       appBar: blueBar('store_products Manager'),
       body: ListView(
@@ -2144,7 +2329,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Add / Edit Row in store_products',
+                  'Add / Edit Product in store_products',
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
@@ -2152,7 +2337,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   controller: idC,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'id (int8 — khali chhodein toh auto ID banega)',
+                    labelText: 'id (khali chhodein toh auto ID banega)',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -2160,7 +2345,15 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                 TextField(
                   controller: nameC,
                   decoration: const InputDecoration(
-                    labelText: 'name / product_name (text)',
+                    labelText: 'Product Name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: brandC,
+                  decoration: const InputDecoration(
+                    labelText: 'Brand',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -2168,45 +2361,17 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                 Row(
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: brandC,
-                        decoration: const InputDecoration(
-                          labelText: 'brand (text)',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: selectedColor,
+                        value: categories.contains(selectedGroup)
+                            ? selectedGroup
+                            : categories.first,
+                        isExpanded: true,
                         decoration: const InputDecoration(
-                          labelText: 'color_variants',
+                          labelText: 'Category',
                           border: OutlineInputBorder(),
                         ),
                         items: [
-                          for (final c in colorNames)
-                            DropdownMenuItem(value: c, child: Text(c)),
-                        ],
-                        onChanged: (v) {
-                          if (v != null) setState(() => selectedColor = v);
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: selectedGroup,
-                        decoration: const InputDecoration(
-                          labelText: 'category',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          for (final g in kStoreCategories)
+                          for (final g in categories)
                             DropdownMenuItem(value: g, child: Text(g)),
                         ],
                         onChanged: (v) {
@@ -2217,13 +2382,16 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: selectedTag,
+                        value: tags.contains(selectedTag)
+                            ? selectedTag
+                            : tags.first,
+                        isExpanded: true,
                         decoration: const InputDecoration(
-                          labelText: 'type_tag',
+                          labelText: 'Type / Sub-Category',
                           border: OutlineInputBorder(),
                         ),
                         items: [
-                          for (final t in kProductTypes)
+                          for (final t in tags)
                             DropdownMenuItem(value: t, child: Text(t)),
                         ],
                         onChanged: (v) {
@@ -2241,7 +2409,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                         controller: priceC,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: 'sale_price (₹)',
+                          labelText: 'Sale Price (₹)',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -2252,7 +2420,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                         controller: mrpC,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: 'mrp (₹)',
+                          labelText: 'MRP (₹)',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -2264,49 +2432,212 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                         controller: stockC,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: 'stock',
+                          labelText: 'Stock',
                           border: OutlineInputBorder(),
                         ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Select Colors (Multiple Select Karein)',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    Text(
+                      '${selectedColors.length} selected',
+                      style: const TextStyle(
+                        color: blue,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final entry in kAllColors.entries)
+                      FilterChip(
+                        selected: selectedColors.contains(entry.key),
+                        selectedColor: blue.withOpacity(0.16),
+                        checkmarkColor: blue,
+                        avatar: Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: entry.value,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.grey.shade500,
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                        label: Text(
+                          entry.key,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: selectedColors.contains(entry.key)
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                        onSelected: (_) => _toggleColor(entry.key),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Upload Product Images (Selected Color ke liye)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final c in selectedColors)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            avatar: Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                color: _swatchForColor(c),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.grey),
+                              ),
+                            ),
+                            label: Text(
+                              '$c (${(imagesByColor[c] ?? const []).length})',
+                            ),
+                            selected: activeImageColor == c,
+                            onSelected: (_) =>
+                                setState(() => activeImageColor = c),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: blue,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                        ),
+                        onPressed: uploading ? null : _pickAndUploadImages,
+                        icon: const Icon(Icons.cloud_upload),
+                        label: Text(
+                          uploading
+                              ? 'Uploading Images...'
+                              : 'Upload Images ($activeImageColor)',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
                       child: TextField(
                         controller: imgUrlC,
+                        decoration: InputDecoration(
+                          labelText: 'Ya Image URL paste karein ($activeImageColor)',
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: _addImageUrlToActiveColor,
+                      child: const Text('Add URL'),
+                    ),
+                  ],
+                ),
+                if (_activeColorImages.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 76,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _activeColorImages.length,
+                      itemBuilder: (_, idx) {
+                        final imgUrl = _activeColorImages[idx];
+                        return Stack(
+                          children: [
+                            Container(
+                              width: 72,
+                              height: 72,
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.grey.shade400),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(7),
+                                child: Image.network(
+                                  imgUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Center(
+                                    child: Icon(Icons.image, size: 24),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 4,
+                              top: 0,
+                              child: GestureDetector(
+                                onTap: () => setState(
+                                  () => _activeColorImages.removeAt(idx),
+                                ),
+                                child: const CircleAvatar(
+                                  radius: 10,
+                                  backgroundColor: Colors.red,
+                                  child: Icon(
+                                    Icons.close,
+                                    size: 12,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: videoUrlC,
                         decoration: const InputDecoration(
-                          labelText: 'images (URL ya uploaded link)',
+                          labelText: 'Product Video URL (optional)',
                           border: OutlineInputBorder(),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      onPressed: uploading ? null : _pickImageToUpload,
-                      icon: const Icon(Icons.upload),
-                      label: Text(uploading ? '...' : 'Upload'),
+                    OutlinedButton.icon(
+                      onPressed: uploadingVideo ? null : _pickAndUploadVideo,
+                      icon: const Icon(Icons.videocam),
+                      label: Text(uploadingVideo ? '...' : 'Upload Video'),
                     ),
                   ],
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: videoUrlC,
-                  decoration: const InputDecoration(
-                    labelText: 'videoUrl (optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: extraJsonC,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: 'data (jsonb — optional extra JSON fields)',
-                    border: OutlineInputBorder(),
-                  ),
                 ),
                 const SizedBox(height: 14),
                 Row(
@@ -2319,7 +2650,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                         ),
                         onPressed: saving ? null : _saveToSupabaseAndApp,
                         child: Text(
-                          saving ? 'SAVING TO SUPABASE...' : 'SAVE ROW',
+                          saving ? 'SAVING TO SUPABASE...' : 'SAVE PRODUCT',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -2336,7 +2667,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Saved Rows (${products.length})',
+            'Saved Products (${products.length})',
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
@@ -2368,7 +2699,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         Text(
-                          '${p.group} • ${p.tag} • ₹${p.price} (Stock: ${p.stock})',
+                          '${p.group} • ${p.tag} • ₹${p.price} • Colors: ${p.effectiveVariants.map((v) => v.colorName).join(', ')}',
                           style: const TextStyle(
                             color: Colors.grey,
                             fontSize: 12,
@@ -2378,12 +2709,12 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Load into Form',
+                    tooltip: 'Edit Product',
                     onPressed: () => _fillFromProduct(p),
                     icon: const Icon(Icons.edit, color: blue),
                   ),
                   IconButton(
-                    tooltip: 'Delete Row',
+                    tooltip: 'Delete Product',
                     onPressed: () => _removeRow(p),
                     icon: const Icon(Icons.delete_outline, color: Colors.red),
                   ),
