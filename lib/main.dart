@@ -18,6 +18,13 @@ const Color orange = Color(0xFFFB641B);
 const Color green = Color(0xFF388E3C);
 const Color bg = Color(0xFFF1F3F6);
 
+final ValueNotifier<int> activeTab = ValueNotifier<int>(0);
+
+void goToHome(BuildContext context) {
+  activeTab.value = 0;
+  Navigator.of(context).popUntil((route) => route.isFirst);
+}
+
 String px(int id) =>
     'https://images.pexels.com/photos/$id/pexels-photo-$id.jpeg?auto=compress&cs=tinysrgb&w=600';
 
@@ -662,8 +669,8 @@ class Store extends ChangeNotifier {
   List<Review> reviewsFor(Product p) => reviews.putIfAbsent(
     p.id,
     () => [
-      Review('Rahul S.', 5, 'Bahut badhiya quality, paisa vasool!'),
-      Review('Priya K.', 4, 'Achhi hai, delivery bhi fast thi.'),
+      Review('Rahul S.', 5, 'Great quality and value for money!'),
+      Review('Priya K.', 4, 'Nice product, fast delivery.'),
     ],
   );
 
@@ -737,29 +744,33 @@ class BrandLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Image.asset(
-        'assets/logo.png',
-        height: 28,
-        errorBuilder: (context, error, stack) => const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.shopping_bag, color: blue, size: 18),
-            SizedBox(width: 4),
-            Text(
-              'Style Shop',
-              style: TextStyle(
-                color: blue,
-                fontWeight: FontWeight.w800,
-                fontSize: 16,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => goToHome(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Image.asset(
+          'assets/logo.png',
+          height: 28,
+          errorBuilder: (context, error, stack) => const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.shopping_bag, color: blue, size: 18),
+              SizedBox(width: 4),
+              Text(
+                'Style Shop',
+                style: TextStyle(
+                  color: blue,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1062,7 +1073,7 @@ class _CouponBoxState extends State<CouponBox> {
                   controller: c,
                   textCapitalization: TextCapitalization.characters,
                   decoration: const InputDecoration(
-                    hintText: 'SAVE10, FLAT200 ya WELCOME',
+                    hintText: 'SAVE10, FLAT200 or WELCOME',
                     border: InputBorder.none,
                   ),
                 ),
@@ -1115,7 +1126,7 @@ void writeReview(BuildContext context, Product p) {
             ),
             TextField(
               controller: c,
-              decoration: const InputDecoration(hintText: 'Apna review likho'),
+              decoration: const InputDecoration(hintText: 'Write your review'),
             ),
           ],
         ),
@@ -1161,11 +1172,12 @@ class ShopApp extends StatelessWidget {
           ),
           scaffoldBackgroundColor: const Color(0xFF121212),
         ),
-        builder: (context, child) => ColoredBox(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          child: Center(child: FrameWidth(child: child)),
+        builder: (context, child) => SizedBox.expand(
+          child: ColoredBox(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: child ?? const SizedBox.shrink(),
+          ),
         ),
-        navigatorObservers: [WidthObserver()],
         home: const RootPage(),
       ),
     );
@@ -1180,8 +1192,6 @@ class RootPage extends StatefulWidget {
 }
 
 class _RootPageState extends State<RootPage> {
-  int tab = 0;
-
   @override
   void initState() {
     super.initState();
@@ -1203,57 +1213,60 @@ class _RootPageState extends State<RootPage> {
       const CartPage(),
       const ProfilePage(),
     ];
-    return Scaffold(
-      body: pages[tab],
-      floatingActionButton: FloatingActionButton(
-        tooltip: 'Support Chat',
-        backgroundColor: blue,
-        foregroundColor: Colors.white,
-        onPressed: () => openSupportChat(context),
-        child: const Icon(Icons.chat_bubble_outline),
-      ),
-      bottomNavigationBar: ListenableBuilder(
-        listenable: store,
-        builder: (context, _) => NavigationBar(
-          selectedIndex: tab,
-          backgroundColor: card(context),
-          indicatorColor: const Color(0xFFDCE8FD),
-          onDestinationSelected: (i) => setState(() => tab = i),
-          destinations: [
-            const NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home, color: blue),
-              label: 'Home',
-            ),
-            NavigationDestination(
-              icon: Badge(
-                label: Text('${store.wish.length}'),
-                isLabelVisible: store.wish.isNotEmpty,
-                child: const Icon(Icons.favorite_border),
+    return ValueListenableBuilder<int>(
+      valueListenable: activeTab,
+      builder: (context, tab, _) => Scaffold(
+        body: pages[tab],
+        floatingActionButton: FloatingActionButton(
+          tooltip: 'Support Chat',
+          backgroundColor: blue,
+          foregroundColor: Colors.white,
+          onPressed: () => openSupportChat(context),
+          child: const Icon(Icons.chat_bubble_outline),
+        ),
+        bottomNavigationBar: ListenableBuilder(
+          listenable: store,
+          builder: (context, _) => NavigationBar(
+            selectedIndex: tab,
+            backgroundColor: card(context),
+            indicatorColor: const Color(0xFFDCE8FD),
+            onDestinationSelected: (i) => activeTab.value = i,
+            destinations: [
+              const NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home, color: blue),
+                label: 'Home',
               ),
-              selectedIcon: const Icon(Icons.favorite, color: blue),
-              label: 'Wishlist',
-            ),
-            const NavigationDestination(
-              icon: Icon(Icons.inventory_2_outlined),
-              selectedIcon: Icon(Icons.inventory_2, color: blue),
-              label: 'Orders',
-            ),
-            NavigationDestination(
-              icon: Badge(
-                label: Text('${store.count}'),
-                isLabelVisible: store.count > 0,
-                child: const Icon(Icons.shopping_cart_outlined),
+              NavigationDestination(
+                icon: Badge(
+                  label: Text('${store.wish.length}'),
+                  isLabelVisible: store.wish.isNotEmpty,
+                  child: const Icon(Icons.favorite_border),
+                ),
+                selectedIcon: const Icon(Icons.favorite, color: blue),
+                label: 'Wishlist',
               ),
-              selectedIcon: const Icon(Icons.shopping_cart, color: blue),
-              label: 'Cart',
-            ),
-            const NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person, color: blue),
-              label: 'Profile',
-            ),
-          ],
+              const NavigationDestination(
+                icon: Icon(Icons.inventory_2_outlined),
+                selectedIcon: Icon(Icons.inventory_2, color: blue),
+                label: 'Orders',
+              ),
+              NavigationDestination(
+                icon: Badge(
+                  label: Text('${store.count}'),
+                  isLabelVisible: store.count > 0,
+                  child: const Icon(Icons.shopping_cart_outlined),
+                ),
+                selectedIcon: const Icon(Icons.shopping_cart, color: blue),
+                label: 'Cart',
+              ),
+              const NavigationDestination(
+                icon: Icon(Icons.person_outline),
+                selectedIcon: Icon(Icons.person, color: blue),
+                label: 'Profile',
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1343,7 +1356,7 @@ class _HomeTabState extends State<HomeTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Mic permission allow karo (phone ya browser mein)'),
+          content: Text('Please allow microphone permission in your device or browser'),
         ),
       );
       return;
@@ -1589,7 +1602,7 @@ class _HomeTabState extends State<HomeTab> {
                         },
                         decoration: InputDecoration(
                           hintText: listening
-                              ? 'Listening... bolo'
+                              ? 'Listening... speak now'
                               : 'Search for products, brands and more',
                           hintStyle: const TextStyle(color: Colors.grey),
                           prefixIcon: const Icon(Icons.search, color: blue),
@@ -2960,50 +2973,6 @@ class SuccessPage extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-final ValueNotifier<double> frameWidth = ValueNotifier<double>(1600);
-
-class WidthObserver extends NavigatorObserver {
-  void _set(Route<dynamic>? r) {
-    final w = (r == null || r.isFirst) ? 1600.0 : 1200.0;
-    WidgetsBinding.instance.addPostFrameCallback((_) => frameWidth.value = w);
-  }
-
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      _set(route);
-
-  @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      _set(previousRoute);
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
-      _set(newRoute);
-
-  @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      _set(previousRoute);
-}
-
-class FrameWidth extends StatelessWidget {
-  final Widget? child;
-  const FrameWidth({super.key, this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<double>(
-      valueListenable: frameWidth,
-      builder: (context, w, _) => TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: w, end: w),
-        duration: const Duration(milliseconds: 250),
-        builder: (context, v, c) =>
-            ConstrainedBox(constraints: BoxConstraints(maxWidth: v), child: c),
-        child: child,
       ),
     );
   }

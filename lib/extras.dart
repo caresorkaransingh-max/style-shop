@@ -462,7 +462,7 @@ void shareProductLink(BuildContext context, Product p) {
 
 void openWhatsAppSupport(BuildContext context, {String? customText}) {
   final text = Uri.encodeComponent(
-    customText ?? 'Hello Style Shop Support, mujhe order/help chahiye.',
+    customText ?? 'Hello Style Shop Support, I need assistance with my order.',
   );
   final url = 'https://wa.me/919999999999?text=$text';
   try {
@@ -913,7 +913,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       imgCtrl.text = picked;
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image upload ho gayi!')),
+        const SnackBar(content: Text('Image uploaded successfully!')),
       );
     }
   }
@@ -925,7 +925,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
       videoUrlCtrl.text = picked;
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Video attach ho gayi!')),
+        const SnackBar(content: Text('Video attached successfully!')),
       );
     }
   }
@@ -1016,7 +1016,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   controller: imgCtrl,
                   onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(
-                    labelText: 'Image URL ya Uploaded Image',
+                    labelText: 'Image URL or Uploaded Image',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
@@ -1073,7 +1073,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
 
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Product name likhein')),
+        const SnackBar(content: Text('Please enter a product name')),
       );
       return;
     }
@@ -1112,7 +1112,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '"$name" locally save ho gaya; cloud sync background mein chal raha hai.',
+          '"$name" saved locally; syncing to cloud in the background.',
         ),
       ),
     );
@@ -1129,7 +1129,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
     catalogVersion.value++;
     setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('"${p.name}" store aur Supabase se remove kar diya gaya')),
+      SnackBar(content: Text('"${p.name}" removed from store and Supabase')),
     );
   }
 
@@ -1281,7 +1281,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Har color ke liye image URL daalein ya "Upload Image" se file chunein. Neeche product video bhi upload/link kar sakte hain.',
+                  'Enter an image URL or choose a file using "Upload Image" for each color. You can also upload or link a product video below.',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 8),
@@ -1341,7 +1341,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                       TextField(
                         controller: videoUrlCtrl,
                         decoration: const InputDecoration(
-                          labelText: 'Video URL (.mp4) ya Uploaded Video',
+                          labelText: 'Video URL (.mp4) or Uploaded Video',
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
@@ -1381,13 +1381,13 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Agar koi product galat add ho gaya ho ya hatana ho to Remove dabayein.',
+                  'Click Remove if a product was added by mistake or needs to be deleted.',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 8),
                 if (products.isEmpty)
                   const Text(
-                    'Store mein koi product nahi hai',
+                    'No products in store',
                     style: TextStyle(color: Colors.grey),
                   )
                 else
@@ -1440,7 +1440,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                   const SizedBox(height: 8),
                   if (store.orders.isEmpty)
                     const Text(
-                      'Abhi koi order nahi hai',
+                      'No orders placed yet',
                       style: TextStyle(color: Colors.grey),
                     )
                   else
@@ -1800,22 +1800,22 @@ class _SupportChatPageState extends State<SupportChatPage> {
   final List<(bool isUser, String text)> messages = [
     (
       false,
-      'Namaste! Style Shop Support mein aapka swagat hai. Order, payment ya return mein kya madad chahiye?',
+      'Welcome to Style Shop Support! How can we help you with your order, payment, or return today?',
     ),
   ];
 
   String _autoReply(String txt) {
     final l = txt.toLowerCase();
     if (l.contains('order') || l.contains('track')) {
-      return 'Aap apne order ka live status Orders tab -> TRACK ORDER par dekh sakte hain.';
+      return 'You can check the live status of your order under the Orders tab -> TRACK ORDER.';
     }
     if (l.contains('return') || l.contains('refund')) {
-      return 'Delivery ke 7 din ke andar Orders tab se Return Request submit ki ja sakti hai.';
+      return 'You can submit a Return Request from the Orders tab within 7 days of delivery.';
     }
     if (l.contains('pay') || l.contains('upi') || l.contains('card')) {
-      return 'Agar UPI/Card payment pending ya cancel ho jaye to order place nahi hota; dobara checkout se try karein.';
+      return 'If a UPI or Card payment is pending or cancelled, the order is not placed. Please try again from checkout.';
     }
-    return 'Humne aapka message ("$txt") note kar liya hai. Hamari support team jald hi reply degi.';
+    return 'Thank you! We have noted your message ("$txt") and our support team will respond shortly.';
   }
 
   void _send([String? preset]) {
@@ -1915,7 +1915,7 @@ class _SupportChatPageState extends State<SupportChatPage> {
                       controller: msgCtrl,
                       onSubmitted: (_) => _send(),
                       decoration: const InputDecoration(
-                        hintText: 'Apna message likhein...',
+                        hintText: 'Type your message...',
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
@@ -2032,11 +2032,11 @@ void openAboutUs(BuildContext context) {
         sections: [
           (
             'Welcome to Style Shop',
-            'Style Shop ek modern online shopping store hai jahan aapko fashion, mobiles, electronics aur home essentials best prices aur fast delivery ke saath milte hain.',
+            'Style Shop is a modern online shopping destination offering fashion, mobiles, electronics, and home essentials at great prices with fast delivery.',
           ),
           (
             'Quality & Trust',
-            'Har product ko quality aur customer satisfaction ke saath list kiya gaya hai. Transparent pricing, coupon offers aur easy return policy hamari priority hai.',
+            'Every product is listed with a focus on quality and customer satisfaction. Transparent pricing, coupon offers, and an easy return policy are our top priorities.',
           ),
         ],
       ),
@@ -2054,7 +2054,7 @@ void openContactUs(BuildContext context) {
         sections: [
           (
             'Customer Support Email',
-            'support@styleshop.example.com - Aap apne order, delivery ya payment se judi kisi bhi query ke liye humein mail kar sakte hain.',
+            'support@styleshop.example.com - Reach out to us via email for any queries regarding your order, delivery, or payment.',
           ),
           (
             'Support Hours',
@@ -2079,15 +2079,15 @@ void openReturnPolicy(BuildContext context) {
         sections: [
           (
             '7 Days Easy Returns',
-            'Delivery ke 7 din ke andar agar product damaged, defective ya size/variant issue ke saath mile to aap return/exchange ke liye request kar sakte hain.',
+            'Within 7 days of delivery, if a product arrives damaged, defective, or with a size/variant issue, you can easily request a return or exchange.',
           ),
           (
             'Eligibility Conditions',
-            'Item unused hona chahiye aur original tags, packaging aur accessories ke saath hona zaroori hai.',
+            'Items must be unused and returned with all original tags, packaging, and accessories intact.',
           ),
           (
             'Refund Timeline',
-            'Return item verify hone ke baad prepaid/UPI/card refund 3-5 working days mein source account mein credit ho jata hai.',
+            'Once the returned item is verified, prepaid, UPI, or card refunds are credited back to the original payment source within 3-5 business days.',
           ),
         ],
       ),
@@ -2419,7 +2419,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Payment complete hone ke baad hi order place hoga.',
+                  'Your order will be placed once payment is completed.',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
@@ -2464,7 +2464,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         builder: (ctx) => AlertDialog(
           title: const Text('Confirm Cash on Delivery'),
           content: Text(
-            'Delivery ke waqt ₹${store.total} cash dena hoga. Order confirm karein?',
+            'You will need to pay ₹${store.total} in cash upon delivery. Confirm order?',
           ),
           actions: [
             TextButton(
