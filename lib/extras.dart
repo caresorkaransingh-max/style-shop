@@ -1144,34 +1144,7 @@ class ProfilePage extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    ListTile(
-                      leading: Icon(
-                        profile.isAdminAuthenticated
-                            ? Icons.admin_panel_settings
-                            : Icons.lock_outline,
-                        color: blue,
-                      ),
-                      title: Text(
-                        profile.isAdminAuthenticated
-                            ? 'Admin Panel (Unlocked)'
-                            : 'Admin Panel (Locked)',
-                      ),
-                      subtitle: const Text(
-                        'Restricted to verified admins with passcode',
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () async {
-                        final ok = await verifyAdminAccess(context);
-                        if (!ok || !context.mounted) return;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AdminPanelPage(),
-                          ),
-                        );
-                      },
-                    ),
-                    const Divider(height: 1),
+
                     ListTile(
                       leading: const Icon(Icons.support_agent, color: green),
                       title: const Text('24x7 Customer Support'),
